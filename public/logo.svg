@@ -1,0 +1,16 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="200" height="60" rx="12" fill="url(#gradient)"/>
+  
+  <!-- Text -->
+  <text x="20" y="38" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="white">VOD</text>
+  <text x="100" y="38" font-family="Arial, sans-serif" font-size="16" font-weight="600" fill="white" opacity="0.9">Sites</text>
+  
+  <!-- Gradient -->
+  <defs>
+    <linearGradient id="gradient" x1="0" y1="0" x2="200" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+</svg>
