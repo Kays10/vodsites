@@ -49,14 +49,9 @@ npm run preview
 - **Esc**: Close modal
 - **Enter**: Open site card
 
-## Deploy to Vercel
+## Deploy to Production
 
-1. Push your code to a GitHub repository
-2. Visit [Vercel](https://vercel.com) and sign up/login
-3. Import your GitHub repository
-4. Vercel will automatically detect it's a Vite project and deploy it!
-
-That's it! Your app will be live in seconds!
+Your VOD Sites Manager can be deployed to **both Vercel and Azure**! See the [DEPLOYMENT.md](./DEPLOYMENT.md) guide for complete instructions.
 
 ## Future Expansion
 
