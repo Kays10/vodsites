@@ -62,3 +62,4 @@ This app is designed to be your single source of truth. Future features could in
 - Import/Export functionality
 - API integration
 - And much more!
+![alt text](https://file%2B.vscode-resource.vscode-cdn.net/Users/user/VOD%20SSites/public/vod-group-logo.svg?version%3D1782723090258)

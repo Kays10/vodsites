@@ -2,23 +2,58 @@ import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
 import { initialSites } from './data';
 
+const ADMIN_PASSWORD = '2wsx@WSX123';
+
 function App() {
+
   const [sites, setSites] = useState<Site[]>(() => {
-    const saved = localStorage.getItem('vodSites');
-    return saved ? JSON.parse(saved) : initialSites;
+    try {
+      const saved = localStorage.getItem('vodSites');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      // If no saved data, use initialSites and save it to localStorage
+      localStorage.setItem('vodSites', JSON.stringify(initialSites));
+      return initialSites;
+    } catch (error) {
+      console.error('Error loading sites:', error);
+      return initialSites;
+    }
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState<Site | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [servicesText, setServicesText] = useState(''); // Separate state for services textarea
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [pendingSaveSite, setPendingSaveSite] = useState<Site | null>(null);
+  const [isAddingNewSite, setIsAddingNewSite] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('vodSites', JSON.stringify(sites));
+    try {
+      localStorage.setItem('vodSites', JSON.stringify(sites));
+    } catch (error) {
+      console.error('Error saving sites to localStorage:', error);
+    }
   }, [sites]);
+
+  // Cleanup overflow on unmount
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in an input/textarea
+      const activeElement = document.activeElement;
+      if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+      
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
         if (!isModalOpen) {
@@ -43,6 +78,19 @@ function App() {
     );
   });
 
+  // Debug: log all site cards after render
+  useEffect(() => {
+    const cards = document.querySelectorAll('.site-card');
+    console.log('Total site cards found:', cards.length);
+    cards.forEach((card, index) => {
+      console.log(`Card ${index}:`, card);
+      // Test click programmatically
+      card.addEventListener('click', (e) => {
+        console.log(`Clicked card ${index}!`, e.currentTarget);
+      });
+    });
+  }, [filteredSites]);
+
   const openAddModal = useCallback(() => {
     const newSite: Site = {
       id: Date.now().toString(),
@@ -64,31 +112,65 @@ function App() {
       notes: '',
       other: '',
     };
+    setSelectedSite(null);
+    setIsAddingNewSite(true);
     setEditingSite(newSite);
+    setServicesText(''); // Initialize services text for new site
     setIsModalOpen(true);
+    document.body.style.overflow = 'hidden';
   }, []);
 
   const openEditModal = useCallback((site: Site) => {
     setSelectedSite(site);
+    setIsAddingNewSite(false);
     setEditingSite({ ...site });
+    setServicesText(site.services.join('\n')); // Initialize services text for existing site
     setIsModalOpen(true);
+    document.body.style.overflow = 'hidden';
   }, []);
 
   const closeModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedSite(null);
     setEditingSite(null);
+    setIsAddingNewSite(false);
+    setPendingSaveSite(null);
+    document.body.style.overflow = 'unset';
   }, []);
 
-  const saveSite = useCallback(() => {
+  const handleSaveAttempt = useCallback(() => {
     if (!editingSite) return;
-    if (selectedSite) {
-      setSites(sites.map(s => s.id === selectedSite.id ? editingSite : s));
+    // Create the save site with services from servicesText
+    const siteToSave: Site = {
+      ...editingSite,
+      services: servicesText.split('\n').filter(s => s.trim() !== '')
+    };
+    setPendingSaveSite(siteToSave);
+    setShowPasswordPrompt(true);
+  }, [editingSite, servicesText]);
+
+  const handlePasswordSubmit = useCallback(() => {
+    if (passwordInput === ADMIN_PASSWORD) {
+      setPasswordInput('');
+      setShowPasswordPrompt(false);
+      if (pendingSaveSite) {
+        if (isAddingNewSite) {
+          setSites([...sites, pendingSaveSite]);
+        } else {
+          setSites(sites.map(s => s.id === selectedSite?.id ? pendingSaveSite : s));
+        }
+        closeModal();
+      }
     } else {
-      setSites([...sites, editingSite]);
+      alert('Incorrect password!');
     }
-    closeModal();
-  }, [editingSite, selectedSite, sites, closeModal]);
+  }, [passwordInput, pendingSaveSite, isAddingNewSite, selectedSite, sites, closeModal]);
+
+  const cancelPasswordPrompt = useCallback(() => {
+    setPasswordInput('');
+    setShowPasswordPrompt(false);
+    setPendingSaveSite(null);
+  }, []);
 
   const deleteSite = useCallback(() => {
     if (!selectedSite) return;
@@ -100,11 +182,14 @@ function App() {
 
   const handleInputChange = useCallback((field: keyof Site, value: string) => {
     if (!editingSite) return;
-    if (field === 'services') {
-      setEditingSite({
-        ...editingSite,
-        services: value.split('\n').filter(s => s.trim() !== '')
-      });
+    if (field === 'ip') {
+      let newIp = value.trim();
+      if (newIp && newIp !== '-' && !newIp.includes('/ods/admin/')) {
+        newIp = newIp.replace(/\/+$/, '') + '/ods/admin/';
+      } else if (newIp === '') {
+        newIp = '-';
+      }
+      setEditingSite({ ...editingSite, [field]: newIp });
     } else {
       setEditingSite({ ...editingSite, [field]: value });
     }
@@ -118,11 +203,7 @@ function App() {
     <div className="container">
       <div className="header">
         <div className="header-content">
-          <img src="/logo.svg" alt="VOD Sites Manager Logo" className="header-logo" />
-          <div className="header-text">
-            <h1>VOD Sites Manager</h1>
-            <p>Manage and edit your supported sites • {sites.length} total sites</p>
-          </div>
+          <h1>VOD GROUP</h1>
         </div>
       </div>
 
@@ -137,7 +218,8 @@ function App() {
         />
       </div>
 
-      <div className="sites-grid">
+      <div className="sites-wrapper">
+        <div className="sites-grid">
         {filteredSites.length === 0 ? (
           <div className="empty-state">
             <h3>No sites found</h3>
@@ -148,10 +230,18 @@ function App() {
             <div 
               key={site.id} 
               className="site-card" 
-              onClick={() => openEditModal(site)}
+              onClick={() => {
+                setSelectedSite(site);
+                openEditModal(site);
+              }}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && openEditModal(site)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSelectedSite(site);
+                  openEditModal(site);
+                }
+              }}
             >
               <h3 className="site-name">{site.name || 'Unnamed Site'}</h3>
               {site.group && <span className="site-group">{site.group}</span>}
@@ -184,6 +274,7 @@ function App() {
             </div>
           ))
         )}
+        </div>
       </div>
 
       <button 
@@ -193,6 +284,45 @@ function App() {
       >
         +
       </button>
+
+      {/* Password Prompt Modal */}
+      {showPasswordPrompt && (
+        <div className="modal-overlay password-prompt" onClick={cancelPasswordPrompt} role="dialog" aria-modal="true">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Enter Admin Password</h2>
+              <button className="modal-close" onClick={cancelPasswordPrompt} aria-label="Close modal">
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label htmlFor="admin-password">Password</label>
+                <input
+                    id="admin-password"
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        handlePasswordSubmit();
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Enter password"
+                    autoFocus
+                  />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <div style={{ flex: 1 }}></div>
+              <button className="btn btn-secondary" onClick={cancelPasswordPrompt}>Cancel</button>
+              <button className="btn btn-primary" onClick={handlePasswordSubmit}>Submit</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && editingSite && (
         <div className="modal-overlay" onClick={closeModal} role="dialog" aria-modal="true">
@@ -212,6 +342,7 @@ function App() {
                     type="text"
                     value={editingSite.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Enter site name"
                   />
                 </div>
@@ -222,6 +353,7 @@ function App() {
                     type="text"
                     value={editingSite.group}
                     onChange={(e) => handleInputChange('group', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Enter group"
                   />
                 </div>
@@ -232,6 +364,7 @@ function App() {
                     type="text"
                     value={editingSite.ip}
                     onChange={(e) => handleInputChange('ip', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Enter IP address"
                   />
                 </div>
@@ -239,9 +372,12 @@ function App() {
                   <label htmlFor="site-services">Services (one per line)</label>
                   <textarea
                     id="site-services"
-                    value={editingSite.services.join('\n')}
-                    onChange={(e) => handleInputChange('services', e.target.value)}
+                    value={servicesText}
+                    onChange={(e) => setServicesText(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
                     placeholder="Enter services, one per line"
+                    style={{ zIndex: 100 }}
                   />
                 </div>
                 <div className="form-group">
@@ -251,6 +387,7 @@ function App() {
                     type="text"
                     value={editingSite.vpn}
                     onChange={(e) => handleInputChange('vpn', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="VPN info"
                   />
                 </div>
@@ -261,6 +398,7 @@ function App() {
                     type="text"
                     value={editingSite.pms}
                     onChange={(e) => handleInputChange('pms', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="PMS info"
                   />
                 </div>
@@ -271,6 +409,7 @@ function App() {
                     type="text"
                     value={editingSite.hsia}
                     onChange={(e) => handleInputChange('hsia', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="HSIA info"
                   />
                 </div>
@@ -281,6 +420,7 @@ function App() {
                     type="text"
                     value={editingSite.iptvSystem}
                     onChange={(e) => handleInputChange('iptvSystem', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="IPTV system"
                   />
                 </div>
@@ -291,6 +431,7 @@ function App() {
                     type="text"
                     value={editingSite.iptvUrl}
                     onChange={(e) => handleInputChange('iptvUrl', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="https://..."
                   />
                 </div>
@@ -301,6 +442,7 @@ function App() {
                     type="text"
                     value={editingSite.castingUrl}
                     onChange={(e) => handleInputChange('castingUrl', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Casting URL"
                   />
                 </div>
@@ -311,6 +453,7 @@ function App() {
                     type="text"
                     value={editingSite.headend}
                     onChange={(e) => handleInputChange('headend', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Headend info"
                   />
                 </div>
@@ -321,16 +464,17 @@ function App() {
                     type="text"
                     value={editingSite.headendUrl}
                     onChange={(e) => handleInputChange('headendUrl', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="http://..."
                   />
                 </div>
-                <div className="form-group">
+                <div className="form-group full-width">
                   <label htmlFor="site-switches">Switches</label>
-                  <input
+                  <textarea
                     id="site-switches"
-                    type="text"
                     value={editingSite.switches}
                     onChange={(e) => handleInputChange('switches', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Switches info"
                   />
                 </div>
@@ -341,6 +485,7 @@ function App() {
                     type="text"
                     value={editingSite.wlanController}
                     onChange={(e) => handleInputChange('wlanController', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="WLAN controller"
                   />
                 </div>
@@ -351,6 +496,7 @@ function App() {
                     type="text"
                     value={editingSite.wlanControllerUrl}
                     onChange={(e) => handleInputChange('wlanControllerUrl', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="https://..."
                   />
                 </div>
@@ -360,7 +506,9 @@ function App() {
                     id="site-notes"
                     value={editingSite.notes}
                     onChange={(e) => handleInputChange('notes', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Additional notes"
+                    rows={4}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -369,7 +517,9 @@ function App() {
                     id="site-other"
                     value={editingSite.other}
                     onChange={(e) => handleInputChange('other', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder="Other info"
+                    rows={4}
                   />
                 </div>
               </div>
@@ -378,7 +528,7 @@ function App() {
               {selectedSite && <button className="btn btn-danger" onClick={deleteSite}>Delete</button>}
               <div style={{ flex: 1 }}></div>
               <button className="btn btn-secondary" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveSite}>Save</button>
+              <button className="btn btn-primary" onClick={handleSaveAttempt}>Save</button>
             </div>
           </div>
         </div>
