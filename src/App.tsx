@@ -3,23 +3,12 @@ import { Site } from './types';
 import { initialSites } from './data';
 
 const ADMIN_PASSWORD = '2wsx@WSX123';
+const API_BASE = '/api';
 
 function App() {
 
-  const [sites, setSites] = useState<Site[]>(() => {
-    try {
-      const saved = localStorage.getItem('vodSites');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-      // If no saved data, use initialSites and save it to localStorage
-      localStorage.setItem('vodSites', JSON.stringify(initialSites));
-      return initialSites;
-    } catch (error) {
-      console.error('Error loading sites:', error);
-      return initialSites;
-    }
-  });
+  const [sites, setSites] = useState<Site[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState<Site | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,13 +19,48 @@ function App() {
   const [pendingSaveSite, setPendingSaveSite] = useState<Site | null>(null);
   const [isAddingNewSite, setIsAddingNewSite] = useState(false);
 
+  // Fetch sites from API on initial load
   useEffect(() => {
+    fetchSites();
+  }, []);
+
+  const fetchSites = useCallback(async () => {
     try {
-      localStorage.setItem('vodSites', JSON.stringify(sites));
+      const response = await fetch(`${API_BASE}/sites`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch sites');
+      }
+      const data = await response.json();
+      // Convert database snake_case to camelCase and parse services JSON
+      const formattedSites: Site[] = data.map((site: any) => ({
+        id: site.id,
+        name: site.name,
+        group: site.group,
+        services: Array.isArray(site.services) ? site.services : JSON.parse(site.services),
+        vpn: site.vpn,
+        pms: site.pms,
+        hsia: site.hsia,
+        ip: site.ip,
+        iptvSystem: site.iptv_system,
+        iptvUrl: site.iptv_url,
+        castingUrl: site.casting_url,
+        headend: site.headend,
+        headendUrl: site.headend_url,
+        switches: site.switches,
+        wlanController: site.wlan_controller,
+        wlanControllerUrl: site.wlan_controller_url,
+        notes: site.notes,
+        other: site.other
+      }));
+      setSites(formattedSites);
     } catch (error) {
-      console.error('Error saving sites to localStorage:', error);
+      console.error('Error fetching sites:', error);
+      // Fallback to initialSites if API fails
+      setSites(initialSites);
+    } finally {
+      setLoading(false);
     }
-  }, [sites]);
+  }, []);
 
   // Cleanup overflow on unmount
   useEffect(() => {
@@ -149,17 +173,78 @@ function App() {
     setShowPasswordPrompt(true);
   }, [editingSite, servicesText]);
 
-  const handlePasswordSubmit = useCallback(() => {
+  const handlePasswordSubmit = useCallback(async () => {
     if (passwordInput === ADMIN_PASSWORD) {
       setPasswordInput('');
       setShowPasswordPrompt(false);
       if (pendingSaveSite) {
-        if (isAddingNewSite) {
-          setSites([...sites, pendingSaveSite]);
-        } else {
-          setSites(sites.map(s => s.id === selectedSite?.id ? pendingSaveSite : s));
+        try {
+          if (isAddingNewSite) {
+            const response = await fetch(`${API_BASE}/sites`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(pendingSaveSite)
+            });
+            if (!response.ok) throw new Error('Failed to create site');
+            const newSite = await response.json();
+            // Convert new site from snake_case
+            const formattedNewSite: Site = {
+              id: newSite.id,
+              name: newSite.name,
+              group: newSite.group,
+              services: Array.isArray(newSite.services) ? newSite.services : JSON.parse(newSite.services),
+              vpn: newSite.vpn,
+              pms: newSite.pms,
+              hsia: newSite.hsia,
+              ip: newSite.ip,
+              iptvSystem: newSite.iptv_system,
+              iptvUrl: newSite.iptv_url,
+              castingUrl: newSite.casting_url,
+              headend: newSite.headend,
+              headendUrl: newSite.headend_url,
+              switches: newSite.switches,
+              wlanController: newSite.wlan_controller,
+              wlanControllerUrl: newSite.wlan_controller_url,
+              notes: newSite.notes,
+              other: newSite.other
+            };
+            setSites([...sites, formattedNewSite]);
+          } else {
+            const response = await fetch(`${API_BASE}/sites/${selectedSite?.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(pendingSaveSite)
+            });
+            if (!response.ok) throw new Error('Failed to update site');
+            const updatedSite = await response.json();
+            // Convert updated site from snake_case
+            const formattedUpdatedSite: Site = {
+              id: updatedSite.id,
+              name: updatedSite.name,
+              group: updatedSite.group,
+              services: Array.isArray(updatedSite.services) ? updatedSite.services : JSON.parse(updatedSite.services),
+              vpn: updatedSite.vpn,
+              pms: updatedSite.pms,
+              hsia: updatedSite.hsia,
+              ip: updatedSite.ip,
+              iptvSystem: updatedSite.iptv_system,
+              iptvUrl: updatedSite.iptv_url,
+              castingUrl: updatedSite.casting_url,
+              headend: updatedSite.headend,
+              headendUrl: updatedSite.headend_url,
+              switches: updatedSite.switches,
+              wlanController: updatedSite.wlan_controller,
+              wlanControllerUrl: updatedSite.wlan_controller_url,
+              notes: updatedSite.notes,
+              other: updatedSite.other
+            };
+            setSites(sites.map(s => s.id === selectedSite?.id ? formattedUpdatedSite : s));
+          }
+          closeModal();
+        } catch (error) {
+          console.error('Error saving site:', error);
+          alert('Failed to save site');
         }
-        closeModal();
       }
     } else {
       alert('Incorrect password!');
@@ -172,11 +257,20 @@ function App() {
     setPendingSaveSite(null);
   }, []);
 
-  const deleteSite = useCallback(() => {
+  const deleteSite = useCallback(async () => {
     if (!selectedSite) return;
     if (confirm(`Are you sure you want to delete "${selectedSite.name}"?`)) {
-      setSites(sites.filter(s => s.id !== selectedSite.id));
-      closeModal();
+      try {
+        const response = await fetch(`${API_BASE}/sites/${selectedSite.id}`, {
+          method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Failed to delete site');
+        setSites(sites.filter(s => s.id !== selectedSite.id));
+        closeModal();
+      } catch (error) {
+        console.error('Error deleting site:', error);
+        alert('Failed to delete site');
+      }
     }
   }, [selectedSite, sites, closeModal]);
 
