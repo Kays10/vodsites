@@ -207,71 +207,33 @@ function App() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(pendingSaveSite)
             });
-            if (!response.ok) throw new Error('Failed to create site');
-            const newSite = await response.json();
-            // Convert new site from snake_case
-            const formattedNewSite: Site = {
-              id: newSite.id,
-              name: newSite.name,
-              group: newSite.group,
-              services: Array.isArray(newSite.services) ? newSite.services : JSON.parse(newSite.services),
-              vpn: newSite.vpn,
-              pms: newSite.pms,
-              hsia: newSite.hsia,
-              ip: newSite.ip,
-              iptvSystem: newSite.iptv_system,
-              iptvUrl: newSite.iptv_url,
-              castingUrl: newSite.casting_url,
-              headend: newSite.headend,
-              headendUrl: newSite.headend_url,
-              switches: newSite.switches,
-              wlanController: newSite.wlan_controller,
-              wlanControllerUrl: newSite.wlan_controller_url,
-              notes: newSite.notes,
-              other: newSite.other
-            };
-            setSites([...sites, formattedNewSite]);
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+              throw new Error(errorData.error || 'Failed to create site');
+            }
           } else {
             const response = await fetch(`${API_BASE}/sites/${selectedSite?.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(pendingSaveSite)
             });
-            if (!response.ok) throw new Error('Failed to update site');
-            const updatedSite = await response.json();
-            // Convert updated site from snake_case
-            const formattedUpdatedSite: Site = {
-              id: updatedSite.id,
-              name: updatedSite.name,
-              group: updatedSite.group,
-              services: Array.isArray(updatedSite.services) ? updatedSite.services : JSON.parse(updatedSite.services),
-              vpn: updatedSite.vpn,
-              pms: updatedSite.pms,
-              hsia: updatedSite.hsia,
-              ip: updatedSite.ip,
-              iptvSystem: updatedSite.iptv_system,
-              iptvUrl: updatedSite.iptv_url,
-              castingUrl: updatedSite.casting_url,
-              headend: updatedSite.headend,
-              headendUrl: updatedSite.headend_url,
-              switches: updatedSite.switches,
-              wlanController: updatedSite.wlan_controller,
-              wlanControllerUrl: updatedSite.wlan_controller_url,
-              notes: updatedSite.notes,
-              other: updatedSite.other
-            };
-            setSites(sites.map(s => s.id === selectedSite?.id ? formattedUpdatedSite : s));
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+              throw new Error(errorData.error || 'Failed to update site');
+            }
           }
           closeModal();
+          // Re-fetch all sites to make sure we're in sync with DB
+          await fetchSites();
         } catch (error) {
           console.error('Error saving site:', error);
-          alert('Failed to save site');
+          alert(error instanceof Error ? error.message : 'Failed to save site');
         }
       }
     } else {
       alert('Incorrect password!');
     }
-  }, [passwordInput, pendingSaveSite, isAddingNewSite, selectedSite, sites, closeModal]);
+  }, [passwordInput, pendingSaveSite, isAddingNewSite, selectedSite, closeModal, fetchSites]);
 
   const cancelPasswordPrompt = useCallback(() => {
     setPasswordInput('');
@@ -286,15 +248,19 @@ function App() {
         const response = await fetch(`${API_BASE}/sites/${selectedSite.id}`, {
           method: 'DELETE'
         });
-        if (!response.ok) throw new Error('Failed to delete site');
-        setSites(sites.filter(s => s.id !== selectedSite.id));
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || 'Failed to delete site');
+        }
         closeModal();
+        // Re-fetch all sites to make sure we're in sync with DB
+        await fetchSites();
       } catch (error) {
         console.error('Error deleting site:', error);
-        alert('Failed to delete site');
+        alert(error instanceof Error ? error.message : 'Failed to delete site');
       }
     }
-  }, [selectedSite, sites, closeModal]);
+  }, [selectedSite, closeModal, fetchSites]);
 
   const handleInputChange = useCallback((field: keyof Site, value: string) => {
     if (!editingSite) return;
