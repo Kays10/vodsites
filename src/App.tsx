@@ -7,7 +7,7 @@ const API_BASE = '/api';
 
 function App() {
 
-  const [sites, setSites] = useState<Site[]>([]);
+  const [sites, setSites] = useState<Site[]>(initialSites);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -28,9 +28,6 @@ function App() {
   const fetchSites = useCallback(async () => {
     setError(null);
     setLoading(true);
-    
-    // First set initial sites immediately so user always sees data
-    setSites(initialSites);
     
     try {
       const response = await fetch(`${API_BASE}/sites`);
@@ -64,8 +61,8 @@ function App() {
         setSites(formattedSites);
       }
     } catch (error) {
-      console.error('Error fetching sites from DB, using local data:', error);
-      // Keep using initialSites
+      console.error('Error fetching sites from DB, keeping local data:', error);
+      // Do NOT overwrite sites - keep using initialSites
     } finally {
       setLoading(false);
     }
@@ -272,7 +269,7 @@ function App() {
     <div className="container">
       <div className="header">
         <div className="header-content">
-          <h1>VOD GROUP - DATABASE READY</h1>
+          <h1>VOD GROUP</h1>
         </div>
       </div>
 
