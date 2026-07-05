@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
+import { initialSites } from './data';
 
 const ADMIN_PASSWORD = '2wsx@WSX123';
 const API_BASE = '/api';
@@ -292,6 +293,24 @@ function App() {
     }
   }, [editingSite]);
 
+  const importSites = useCallback(async () => {
+    if (!confirm('Are you sure you want to import the initial sites? This will add them to the database if they don\'t exist.')) {
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/import-sites`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error('Failed to import sites');
+      const data = await response.json();
+      alert(data.message);
+      fetchSites();
+    } catch (error) {
+      console.error('Error importing sites:', error);
+      alert('Failed to import sites');
+    }
+  }, [fetchSites]);
+
   const isValidUrl = (url: string) => {
     return url.startsWith('http://') || url.startsWith('https://');
   };
@@ -301,6 +320,13 @@ function App() {
       <div className="header">
         <div className="header-content">
           <h1>VOD GROUP</h1>
+          <button 
+            className="btn btn-primary"
+            onClick={importSites}
+            style={{ marginLeft: '1rem' }}
+          >
+            Import Initial Sites
+          </button>
         </div>
       </div>
 
