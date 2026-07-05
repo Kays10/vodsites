@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
-import { initialSites } from './data';
 
 const ADMIN_PASSWORD = '2wsx@WSX123';
 const API_BASE = '/api';
@@ -9,6 +8,7 @@ function App() {
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState<Site | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,10 +25,13 @@ function App() {
   }, []);
 
   const fetchSites = useCallback(async () => {
+    setError(null);
+    setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/sites`);
       if (!response.ok) {
-        throw new Error('Failed to fetch sites');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to fetch sites');
       }
       const data = await response.json();
       // Convert database snake_case to camelCase and parse services JSON
@@ -36,27 +39,27 @@ function App() {
         id: site.id,
         name: site.name,
         group: site.group,
-        services: Array.isArray(site.services) ? site.services : JSON.parse(site.services),
-        vpn: site.vpn,
-        pms: site.pms,
-        hsia: site.hsia,
-        ip: site.ip,
-        iptvSystem: site.iptv_system,
-        iptvUrl: site.iptv_url,
-        castingUrl: site.casting_url,
-        headend: site.headend,
-        headendUrl: site.headend_url,
-        switches: site.switches,
-        wlanController: site.wlan_controller,
-        wlanControllerUrl: site.wlan_controller_url,
-        notes: site.notes,
-        other: site.other
+        services: Array.isArray(site.services) ? site.services : (typeof site.services === 'string' ? JSON.parse(site.services) : []),
+        vpn: site.vpn || '',
+        pms: site.pms || '',
+        hsia: site.hsia || '',
+        ip: site.ip || '',
+        iptvSystem: site.iptv_system || '',
+        iptvUrl: site.iptv_url || '',
+        castingUrl: site.casting_url || '',
+        headend: site.headend || '',
+        headendUrl: site.headend_url || '',
+        switches: site.switches || '',
+        wlanController: site.wlan_controller || '',
+        wlanControllerUrl: site.wlan_controller_url || '',
+        notes: site.notes || '',
+        other: site.other || ''
       }));
       setSites(formattedSites);
     } catch (error) {
       console.error('Error fetching sites:', error);
-      // Fallback to initialSites if API fails
-      setSites(initialSites);
+      setError(error instanceof Error ? error.message : 'Failed to load sites');
+      setSites([]);
     } finally {
       setLoading(false);
     }
@@ -314,7 +317,24 @@ function App() {
 
       <div className="sites-wrapper">
         <div className="sites-grid">
-        {filteredSites.length === 0 ? (
+        {loading ? (
+          <div className="empty-state">
+            <h3>Loading...</h3>
+            <p>Please wait while we load the sites</p>
+          </div>
+        ) : error ? (
+          <div className="empty-state">
+            <h3>Error</h3>
+            <p>{error}</p>
+            <button 
+              className="btn btn-primary" 
+              onClick={fetchSites}
+              style={{ marginTop: '1rem' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : filteredSites.length === 0 ? (
           <div className="empty-state">
             <h3>No sites found</h3>
             <p>Try a different search term or add a new site</p>
