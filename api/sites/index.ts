@@ -1,17 +1,25 @@
 
-import { neon } from '@neondatabase/serverless';
+import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!process.env.DATABASE_URL) {
-    return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({ error: 'Supabase credentials not configured' });
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   if (req.method === 'GET') {
     try {
-      const result = await sql`SELECT * FROM sites ORDER BY name ASC`;
-      return res.status(200).json(result);
+      const { data, error } = await supabase
+        .from('sites')
+        .select('*')
+        .order('name', { ascending: true });
+      
+      if (error) throw error;
+      return res.status(200).json(data);
     } catch (error) {
       console.error('Error fetching sites:', error);
       return res.status(500).json({ error: 'Failed to fetch sites' });
@@ -19,22 +27,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } else if (req.method === 'POST') {
     try {
       const site = req.body;
-      const result = await sql`
-        INSERT INTO sites (
-          id, name, "group", services, vpn, pms, hsia, ip, iptv_system, iptv_url,
-          casting_url, headend, headend_url, switches, wlan_controller,
-          wlan_controller_url, notes, other
-        ) VALUES (
-          ${site.id}, ${site.name}, ${site.group}, ${JSON.stringify(site.services)},
-          ${site.vpn || null}, ${site.pms || null}, ${site.hsia || null},
-          ${site.ip || null}, ${site.iptvSystem || null}, ${site.iptvUrl || null},
-          ${site.castingUrl || null}, ${site.headend || null},
-          ${site.headendUrl || null}, ${site.switches || null},
-          ${site.wlanController || null}, ${site.wlanControllerUrl || null},
-          ${site.notes || null}, ${site.other || null}
-        ) RETURNING *
-      `;
-      return res.status(201).json(result[0]);
+      const { data, error } = await supabase
+        .from('sites')
+        .insert([{
+          id: site.id,
+          name: site.name,
+          group: site.group,
+          services: site.services,
+          vpn: site.vpn || null,
+          pms: site.pms || null,
+          hsia: site.hsia || null,
+          ip: site.ip || null,
+          iptv_system: site.iptvSystem || null,
+          iptv_url: site.iptvUrl || null,
+          casting_url: site.castingUrl || null,
+          headend: site.headend || null,
+          headend_url: site.headendUrl || null,
+          switches: site.switches || null,
+          wlan_controller: site.wlanController || null,
+          wlan_controller_url: site.wlanControllerUrl || null,
+          notes: site.notes || null,
+          other: site.other || null
+        }])
+        .select();
+      
+      if (error) throw error;
+      return res.status(201).json(data[0]);
     } catch (error) {
       console.error('Error creating site:', error);
       return res.status(500).json({ error: 'Failed to create site' });

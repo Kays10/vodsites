@@ -1,52 +1,63 @@
 
-import { neon } from '@neondatabase/serverless';
+import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!process.env.DATABASE_URL) {
-    return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({ error: 'Supabase credentials not configured' });
   }
-  const sql = neon(process.env.DATABASE_URL);
-  const { id } = req.query.id as string;
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const { id } = req.query;
 
   if (req.method === 'PUT') {
     try {
       const site = req.body;
-      const result = await sql`
-        UPDATE sites
-        SET
-          name = ${site.name},
-          "group" = ${site.group},
-          services = ${JSON.stringify(site.services)},
-          vpn = ${site.vpn || null},
-          pms = ${site.pms || null},
-          hsia = ${site.hsia || null},
-          ip = ${site.ip || null},
-          iptv_system = ${site.iptvSystem || null},
-          iptv_url = ${site.iptvUrl || null},
-          casting_url = ${site.castingUrl || null},
-          headend = ${site.headend || null},
-          headend_url = ${site.headendUrl || null},
-          switches = ${site.switches || null},
-          wlan_controller = ${site.wlanController || null},
-          wlan_controller_url = ${site.wlanControllerUrl || null},
-          notes = ${site.notes || null},
-          other = ${site.other || null}
-        WHERE id = ${id}
-        RETURNING *
-      `;
-      if (result.length === 0) {
+      const { data, error } = await supabase
+        .from('sites')
+        .update({
+          name: site.name,
+          group: site.group,
+          services: site.services,
+          vpn: site.vpn || null,
+          pms: site.pms || null,
+          hsia: site.hsia || null,
+          ip: site.ip || null,
+          iptv_system: site.iptvSystem || null,
+          iptv_url: site.iptvUrl || null,
+          casting_url: site.castingUrl || null,
+          headend: site.headend || null,
+          headend_url: site.headendUrl || null,
+          switches: site.switches || null,
+          wlan_controller: site.wlanController || null,
+          wlan_controller_url: site.wlanControllerUrl || null,
+          notes: site.notes || null,
+          other: site.other || null
+        })
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      if (data.length === 0) {
         return res.status(404).json({ error: 'Site not found' });
       }
-      return res.status(200).json(result[0]);
+      return res.status(200).json(data[0]);
     } catch (error) {
       console.error('Error updating site:', error);
       return res.status(500).json({ error: 'Failed to update site' });
     }
   } else if (req.method === 'DELETE') {
     try {
-      const result = await sql`DELETE FROM sites WHERE id = ${id} RETURNING *`;
-      if (result.length === 0) {
+      const { data, error } = await supabase
+        .from('sites')
+        .delete()
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      if (data.length === 0) {
         return res.status(404).json({ error: 'Site not found' });
       }
       return res.status(204).send();
