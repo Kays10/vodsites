@@ -3,12 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return res.status(500).json({ error: 'Supabase credentials not configured' });
+  if (!process.env.SUPABASE_URL) {
+    return res.status(500).json({ error: 'Supabase URL not configured' });
+  }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  if (!serviceKey) {
+    return res.status(500).json({ error: 'Supabase service/secret key not configured' });
   }
   const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    serviceKey
   );
 
   if (req.method === 'GET') {
