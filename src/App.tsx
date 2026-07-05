@@ -225,26 +225,7 @@ function App() {
     setPendingSaveSite(null);
   }, []);
 
-  const deleteSite = useCallback(async () => {
-    if (!selectedSite) return;
-    if (confirm(`Are you sure you want to delete "${selectedSite.name}"?`)) {
-      try {
-        const response = await fetch(`${API_BASE}/sites/${selectedSite.id}`, {
-          method: 'DELETE'
-        });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(errorData.error || 'Failed to delete site');
-        }
-        closeModal();
-        // Re-fetch all sites to make sure we're in sync with DB
-        await fetchSites();
-      } catch (error) {
-        console.error('Error deleting site:', error);
-        alert(error instanceof Error ? error.message : 'Failed to delete site');
-      }
-    }
-  }, [selectedSite, closeModal, fetchSites]);
+
 
   const handleInputChange = useCallback((field: keyof Site, value: string) => {
     if (!editingSite) return;
@@ -608,7 +589,6 @@ function App() {
               </div>
             </div>
             <div className="modal-footer">
-              {selectedSite && <button className="btn btn-danger" onClick={deleteSite}>Delete</button>}
               <div style={{ flex: 1 }}></div>
               <button className="btn btn-secondary" onClick={closeModal}>Cancel</button>
               <button className="btn btn-primary" onClick={handleSaveAttempt}>Save</button>
