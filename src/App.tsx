@@ -272,7 +272,7 @@ function App() {
     <div className="container">
       <div className="header">
         <div className="header-content">
-          <h1>VOD GROUP</h1>
+          <h1>VOD GROUP - DATABASE READY</h1>
         </div>
       </div>
 
