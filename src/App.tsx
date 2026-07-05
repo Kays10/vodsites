@@ -28,57 +28,44 @@ function App() {
   const fetchSites = useCallback(async () => {
     setError(null);
     setLoading(true);
+    
+    // First set initial sites immediately so user always sees data
+    setSites(initialSites);
+    
     try {
       const response = await fetch(`${API_BASE}/sites`);
       if (!response.ok) {
         throw new Error('Failed to fetch sites');
       }
       const data = await response.json();
-      // Convert database snake_case to camelCase and parse services JSON
-      const formattedSites: Site[] = data.map((site: any) => ({
-        id: site.id,
-        name: site.name,
-        group: site.group,
-        services: Array.isArray(site.services) ? site.services : (typeof site.services === 'string' ? JSON.parse(site.services) : []),
-        vpn: site.vpn || '',
-        pms: site.pms || '',
-        hsia: site.hsia || '',
-        ip: site.ip || '',
-        iptvSystem: site.iptv_system || '',
-        iptvUrl: site.iptv_url || '',
-        castingUrl: site.casting_url || '',
-        headend: site.headend || '',
-        headendUrl: site.headend_url || '',
-        switches: site.switches || '',
-        wlanController: site.wlan_controller || '',
-        wlanControllerUrl: site.wlan_controller_url || '',
-        notes: site.notes || '',
-        other: site.other || ''
-      }));
       
-      if (formattedSites.length === 0) {
-        // If no sites in DB, use initialSites and optionally add them to DB
-        setSites(initialSites);
-        // Try to add initial sites to DB in background
-        try {
-          await Promise.all(initialSites.map(async (site) => {
-            await fetch(`${API_BASE}/sites`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(site)
-            }).catch(() => {}); // Ignore errors if sites already exist
-          }));
-        } catch (e) {
-          console.log('Could not auto-import sites to DB', e);
-        }
-      } else {
+      if (data && data.length > 0) {
+        // Convert database snake_case to camelCase and parse services JSON
+        const formattedSites: Site[] = data.map((site: any) => ({
+          id: site.id,
+          name: site.name,
+          group: site.group,
+          services: Array.isArray(site.services) ? site.services : (typeof site.services === 'string' ? JSON.parse(site.services) : []),
+          vpn: site.vpn || '',
+          pms: site.pms || '',
+          hsia: site.hsia || '',
+          ip: site.ip || '',
+          iptvSystem: site.iptv_system || '',
+          iptvUrl: site.iptv_url || '',
+          castingUrl: site.casting_url || '',
+          headend: site.headend || '',
+          headendUrl: site.headend_url || '',
+          switches: site.switches || '',
+          wlanController: site.wlan_controller || '',
+          wlanControllerUrl: site.wlan_controller_url || '',
+          notes: site.notes || '',
+          other: site.other || ''
+        }));
         setSites(formattedSites);
       }
     } catch (error) {
-      console.error('Error fetching sites, falling back to initial data:', error);
-      // Fallback to initialSites if API fails
-      setSites(initialSites);
-      setError(null);
+      console.error('Error fetching sites from DB, using local data:', error);
+      // Keep using initialSites
     } finally {
       setLoading(false);
     }
