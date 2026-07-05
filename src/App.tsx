@@ -31,8 +31,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE}/sites`);
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || 'Failed to fetch sites');
+        throw new Error('Failed to fetch sites');
       }
       const data = await response.json();
       // Convert database snake_case to camelCase and parse services JSON
@@ -56,11 +55,30 @@ function App() {
         notes: site.notes || '',
         other: site.other || ''
       }));
-      setSites(formattedSites);
+      
+      if (formattedSites.length === 0) {
+        // If no sites in DB, use initialSites and optionally add them to DB
+        setSites(initialSites);
+        // Try to add initial sites to DB in background
+        try {
+          await Promise.all(initialSites.map(async (site) => {
+            await fetch(`${API_BASE}/sites`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(site)
+            }).catch(() => {}); // Ignore errors if sites already exist
+          }));
+        } catch (e) {
+          console.log('Could not auto-import sites to DB', e);
+        }
+      } else {
+        setSites(formattedSites);
+      }
     } catch (error) {
-      console.error('Error fetching sites:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load sites');
-      setSites([]);
+      console.error('Error fetching sites, falling back to initial data:', error);
+      // Fallback to initialSites if API fails
+      setSites(initialSites);
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -293,24 +311,6 @@ function App() {
     }
   }, [editingSite]);
 
-  const importSites = useCallback(async () => {
-    if (!confirm('Are you sure you want to import the initial sites? This will add them to the database if they don\'t exist.')) {
-      return;
-    }
-    try {
-      const response = await fetch(`${API_BASE}/import-sites`, {
-        method: 'POST'
-      });
-      if (!response.ok) throw new Error('Failed to import sites');
-      const data = await response.json();
-      alert(data.message);
-      fetchSites();
-    } catch (error) {
-      console.error('Error importing sites:', error);
-      alert('Failed to import sites');
-    }
-  }, [fetchSites]);
-
   const isValidUrl = (url: string) => {
     return url.startsWith('http://') || url.startsWith('https://');
   };
@@ -320,13 +320,6 @@ function App() {
       <div className="header">
         <div className="header-content">
           <h1>VOD GROUP</h1>
-          <button 
-            className="btn btn-primary"
-            onClick={importSites}
-            style={{ marginLeft: '1rem' }}
-          >
-            Import Initial Sites
-          </button>
         </div>
       </div>
 
