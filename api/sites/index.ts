@@ -1,8 +1,14 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { authenticateRequest } from '../_lib/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const auth = authenticateRequest(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Unauthorized. Please log in.' });
+  }
+
   if (!process.env.SUPABASE_URL) {
     return res.status(500).json({ error: 'Supabase URL not configured' });
   }

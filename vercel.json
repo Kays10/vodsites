@@ -1,6 +1,18 @@
 {
   "rewrites": [
     {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth/:path*"
+    },
+    {
+      "source": "/api/sites/:path*",
+      "destination": "/api/sites/:path*"
+    },
+    {
+      "source": "/api/users/:path*",
+      "destination": "/api/users/:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/"
     }

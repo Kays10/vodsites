@@ -18,3 +18,18 @@ export interface Site {
   notes: string;
   other: string;
 }
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  fullName: string | null;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  fullName: string | null;
+  isActive: boolean;
+  createdAt: string | null;
+}
+

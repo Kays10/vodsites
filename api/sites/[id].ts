@@ -1,8 +1,14 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { authenticateRequest } from '../_lib/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const auth = authenticateRequest(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Unauthorized. Please log in.' });
+  }
+
   console.log('=== api/sites/[id].ts HIT! ===');
   console.log('req.method:', req.method);
   console.log('req.url:', req.url);
