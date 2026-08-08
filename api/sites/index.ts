@@ -27,22 +27,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('*')
         .order('name', { ascending: true });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase GET error:', error);
+        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
+      }
       return res.status(200).json(data);
-    } catch (error) {
-      console.error('Error fetching sites:', error);
-      return res.status(500).json({ error: 'Failed to fetch sites' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Error fetching sites:', msg);
+      return res.status(500).json({ error: msg });
     }
   } else if (req.method === 'POST') {
     try {
       const site = req.body;
+
+      if (!site || typeof site !== 'object') {
+        return res.status(400).json({ error: 'Request body is missing or invalid.' });
+      }
+      if (!site.name || typeof site.name !== 'string' || !site.name.trim()) {
+        return res.status(400).json({ error: 'Site name is required.' });
+      }
+
       const { data, error } = await supabase
         .from('sites')
         .insert([{
-          id: site.id,
-          name: site.name,
-          group: site.group,
-          services: site.services,
+          id: site.id || undefined,
+          name: site.name.trim(),
+          group: site.group || '',
+          services: Array.isArray(site.services) ? site.services : [],
           vpn: site.vpn || null,
           pms: site.pms || null,
           hsia: site.hsia || null,
@@ -60,11 +72,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }])
         .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase INSERT error:', error);
+        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
+      }
       return res.status(201).json(data[0]);
-    } catch (error) {
-      console.error('Error creating site:', error);
-      return res.status(500).json({ error: 'Failed to create site' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Error creating site:', msg);
+      return res.status(500).json({ error: msg });
     }
   } else {
     res.setHeader('Allow', ['GET', 'POST']);

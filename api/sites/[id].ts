@@ -28,8 +28,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('sites')
         .update({
           name: site.name,
-          group: site.group,
-          services: site.services,
+          group: site.group || '',
+          services: Array.isArray(site.services) ? site.services : [],
           vpn: site.vpn || null,
           pms: site.pms || null,
           hsia: site.hsia || null,
@@ -48,14 +48,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .eq('id', id)
         .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase UPDATE error:', error);
+        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
+      }
       if (data.length === 0) {
         return res.status(404).json({ error: 'Site not found' });
       }
       return res.status(200).json(data[0]);
-    } catch (error) {
-      console.error('Error updating site:', error);
-      return res.status(500).json({ error: 'Failed to update site' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Error updating site:', msg);
+      return res.status(500).json({ error: msg });
     }
   } else if (req.method === 'DELETE') {
     try {

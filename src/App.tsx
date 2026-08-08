@@ -60,7 +60,17 @@ function App() {
     try {
       const response = await authFetch(`${API_BASE}/sites`);
       if (response.status === 401) { await handleLogout(); return; }
-      if (!response.ok) throw new Error('Failed to fetch sites');
+      if (!response.ok) {
+        let errorMsg = `Server error (${response.status})`;
+        try {
+          const ct = response.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const errorData = await response.json();
+            errorMsg = errorData.error || errorData.message || errorMsg;
+          }
+        } catch { /* keep default */ }
+        throw new Error(errorMsg);
+      }
       const data = await response.json();
       const sitesList = Array.isArray(data) ? data : [];
       const formattedSites: Site[] = sitesList.map((site: any) => ({
@@ -146,8 +156,15 @@ function App() {
       }
       if (response.status === 401) { await handleLogout(); return; }
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || 'Failed to save site');
+        let errorMsg = `Server error (${response.status})`;
+        try {
+          const ct = response.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const errorData = await response.json();
+            errorMsg = errorData.error || errorData.message || errorMsg;
+          }
+        } catch { /* keep default message */ }
+        throw new Error(errorMsg);
       }
       closeModal();
       await fetchSites();
