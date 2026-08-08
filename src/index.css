@@ -71,10 +71,12 @@ body {
 }
 
 .header-logo {
-  max-width: 200px;
+  max-width: 160px;
   height: auto;
   display: block;
-  filter: brightness(0) invert(1);
+  background: white;
+  border-radius: 8px;
+  padding: 8px 14px;
 }
 
 .search-bar {

@@ -5,53 +5,6 @@ import LoginPage from './auth/LoginPage';
 
 const API_BASE = '/api';
 
-// ─── Password Prompt Modal ────────────────────────────────────────────────────
-interface PasswordPromptProps {
-  message: string;
-  onConfirm: (password: string) => void;
-  onCancel: () => void;
-}
-function PasswordPrompt({ message, onConfirm, onCancel }: PasswordPromptProps) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState('');
-  const submit = () => {
-    if (!value.trim()) { setError('Password is required.'); return; }
-    onConfirm(value);
-  };
-  return (
-    <div className="modal-overlay password-prompt" role="dialog" aria-modal="true" onClick={onCancel}>
-      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Confirm Delete</h2>
-          <button className="modal-close" onClick={onCancel} aria-label="Cancel">×</button>
-        </div>
-        <div className="modal-body">
-          <p style={{ marginBottom: 20, color: '#374151' }}>{message}</p>
-          {error && (
-            <div className="login-alert" role="alert" style={{ marginBottom: 16 }}>{error}</div>
-          )}
-          <div className="form-group">
-            <label htmlFor="confirm-password">Your Password</label>
-            <input
-              id="confirm-password"
-              type="password"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
-              placeholder="Enter your password to confirm"
-              autoFocus
-            />
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn btn-danger" onClick={submit}>Delete</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
   const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
@@ -65,10 +18,6 @@ function App() {
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [servicesText, setServicesText] = useState('');
   const [isAddingNewSite, setIsAddingNewSite] = useState(false);
-  const [passwordPrompt, setPasswordPrompt] = useState<{
-    message: string;
-    onConfirm: (pw: string) => void;
-  } | null>(null);
 
   const authFetch = useCallback(
     (input: RequestInfo, init?: RequestInit): Promise<Response> => {
@@ -207,45 +156,6 @@ function App() {
     }
   }, [editingSite, servicesText, isAddingNewSite, selectedSite, closeModal, fetchSites, authFetch, handleLogout]);
 
-  const handleDeleteSite = useCallback(() => {
-    if (!selectedSite) return;
-    setPasswordPrompt({
-      message: `Delete "${selectedSite.name}"? This cannot be undone.`,
-      onConfirm: async (password: string) => {
-        setPasswordPrompt(null);
-        // Verify password before deleting
-        try {
-          const verifyResp = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: user?.email, password }),
-          });
-          if (!verifyResp.ok) {
-            alert('Incorrect password. Site was not deleted.');
-            return;
-          }
-        } catch {
-          alert('Could not verify password. Site was not deleted.');
-          return;
-        }
-        try {
-          const response = await authFetch(`${API_BASE}/sites/${selectedSite.id}`, {
-            method: 'DELETE',
-          });
-          if (response.status === 401) { await handleLogout(); return; }
-          if (!response.ok && response.status !== 204) {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-            throw new Error(errorData.error || 'Failed to delete site');
-          }
-          closeModal();
-          await fetchSites();
-        } catch (err) {
-          alert(err instanceof Error ? err.message : 'Failed to delete site');
-        }
-      },
-    });
-  }, [selectedSite, user, authFetch, handleLogout, closeModal, fetchSites]);
-
   const handleInputChange = useCallback((field: keyof Site, value: string) => {
     if (!editingSite) return;
     if (field === 'ip') {
@@ -321,11 +231,8 @@ function App() {
             </div>
           ) : error ? (
             <div className="empty-state">
-              <h3>Error</h3>
+              <h3>Could not load sites</h3>
               <p>{error}</p>
-              <button className="btn btn-primary" onClick={fetchSites} style={{ marginTop: '1rem' }}>
-                Retry
-              </button>
             </div>
           ) : filteredSites.length === 0 ? (
             <div className="empty-state">
@@ -493,26 +400,12 @@ function App() {
               </div>
             </div>
             <div className="modal-footer">
-              {!isAddingNewSite && (
-                <button className="btn btn-danger" onClick={handleDeleteSite}>
-                  Delete Site
-                </button>
-              )}
               <div style={{ flex: 1 }} />
               <button className="btn btn-secondary" onClick={closeModal}>Cancel</button>
               <button className="btn btn-primary" onClick={handleSaveAttempt}>Save</button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Password confirmation prompt */}
-      {passwordPrompt && (
-        <PasswordPrompt
-          message={passwordPrompt.message}
-          onConfirm={passwordPrompt.onConfirm}
-          onCancel={() => setPasswordPrompt(null)}
-        />
       )}
     </div>
   );
