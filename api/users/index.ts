@@ -1,21 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
-import { makeSupabase } from '../_lib/supabase';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = authenticateRequest(req);
-  if (!auth) {
-    return res.status(401).json({ error: 'Unauthorized. Please log in.' });
-  }
+  if (!auth) return res.status(401).json({ error: 'Unauthorized. Please log in.' });
 
-  if (!process.env.SUPABASE_URL) {
-    return res.status(500).json({ error: 'Supabase URL not configured' });
-  }
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  if (!serviceKey) {
-    return res.status(500).json({ error: 'Supabase service/secret key not configured' });
-  }
-  const supabase = await makeSupabase();
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  if (!url) return res.status(500).json({ error: 'Supabase URL not configured' });
+  if (!key) return res.status(500).json({ error: 'Supabase key not configured' });
+
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
   if (req.method === 'GET') {
     try {
