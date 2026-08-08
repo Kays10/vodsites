@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
 import { makeSupabase } from '../_lib/supabase';
@@ -98,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Supabase client init (its own try/catch)
-    let supabaseAdmin: ReturnType<typeof createClient>;
+    let supabaseAdmin: ReturnType<typeof makeSupabase>;
     try {
       supabaseAdmin = makeSupabase();
     } catch (e) {
