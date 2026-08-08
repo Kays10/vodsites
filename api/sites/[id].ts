@@ -9,31 +9,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized. Please log in.' });
   }
 
-  console.log('=== api/sites/[id].ts HIT! ===');
-  console.log('req.method:', req.method);
-  console.log('req.url:', req.url);
-  console.log('req.query:', req.query);
   if (!process.env.SUPABASE_URL) {
-    console.error('❌ No SUPABASE_URL');
     return res.status(500).json({ error: 'Supabase URL not configured' });
   }
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!serviceKey) {
-    console.error('❌ No service/secret key');
     return res.status(500).json({ error: 'Supabase service/secret key not configured' });
   }
-  console.log('✅ Credentials OK');
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    serviceKey
-  );
+  const supabase = createClient(process.env.SUPABASE_URL, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   const { id } = req.query;
-  console.log('Site ID:', id);
 
   if (req.method === 'PUT') {
     try {
       const site = req.body;
-      console.log('Updating site with data:', site);
       const { data, error } = await supabase
         .from('sites')
         .update({
@@ -58,11 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .eq('id', id)
         .select();
       
-      if (error) {
-        console.error('❌ Supabase update error:', error);
-        throw error;
-      }
-      console.log('✅ Supabase update OK:', data);
+      if (error) throw error;
       if (data.length === 0) {
         return res.status(404).json({ error: 'Site not found' });
       }
@@ -83,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (data.length === 0) {
         return res.status(404).json({ error: 'Site not found' });
       }
-      return res.status(204).send();
+      return res.status(204).end();
     } catch (error) {
       console.error('Error deleting site:', error);
       return res.status(500).json({ error: 'Failed to delete site' });

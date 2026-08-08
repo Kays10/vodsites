@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../../_lib/auth';
+import { authenticateRequest } from '../_lib/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = authenticateRequest(req);
@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error('Error deleting local user row:', deleteLocalError);
     }
 
-    return res.status(204).send();
+    return res.status(204).end();
   } catch (error) {
     console.error('Delete user unexpected error:', error);
     return res.status(500).json({ error: 'Internal server error.' });

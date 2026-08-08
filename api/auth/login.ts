@@ -1,368 +1,308 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyPassword, signToken, hashPassword } from '../../_lib/auth';
+import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
-  }
+// ============================================================================
+// Self-contained auth helpers (no imports from _lib/auth, no jsonwebtoken).
+// Everything here uses Node's built-in `crypto` module — guaranteed available.
+// ============================================================================
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  if (!supabaseUrl || supabaseUrl.startsWith('__FILL') || supabaseUrl.trim() === '') {
-    const err =
-      'SUPABASE_URL is not configured (empty or placeholder). Set it in Vercel Project -> Settings -> Environment Variables, then redeploy.';
-    console.error('[LOGIN][FATAL]', err, 'value=', JSON.stringify(supabaseUrl));
-    return res
-      .status(500)
-      .json({ error: 'Server configuration error. Contact administrator.', diagnostic_code: 'L500-NO-SUPABASE-URL' });
-  }
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  if (!serviceKey || serviceKey.startsWith('__FILL') || serviceKey.trim() === '') {
-    const err =
-      'SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) is not configured. Set it in Vercel Project -> Settings -> Environment Variables, then redeploy.';
-    console.error('[LOGIN][FATAL]', err);
-    return res.status(500).json({
-      error: 'Server configuration error. Contact administrator.',
-      diagnostic_code: 'L500-NO-SUPABASE-SERVICE-KEY',
-    });
-  }
+const SALT_ROUNDS = 16;
+const TOKEN_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret || jwtSecret.startsWith('change-me') || jwtSecret.trim() === '') {
-    console.error('[LOGIN][FATAL] JWT_SECRET is not configured (empty or still default placeholder).');
-    return res.status(500).json({
-      error: 'Server configuration error. Contact administrator.',
-      diagnostic_code: 'L500-NO-JWT-SECRET',
-    });
-  }
+function base64UrlEncode(buf: Buffer | string): string {
+  const b = typeof buf === 'string' ? Buffer.from(buf, 'utf8') : buf;
+  return b
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+function readEnv(key: string): string {
+  const v = process.env[key];
+  return typeof v === 'string' ? v : '';
+}
 
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  const supabaseAuth =
-    anonKey && !anonKey.startsWith('__FILL') && anonKey.trim() !== ''
-      ? createClient(supabaseUrl, anonKey, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        })
-      : supabaseAdmin;
+function hashPassword(password: string): string {
+  const salt = randomBytes(SALT_ROUNDS).toString('hex');
+  const derivedKey = scryptSync(password, salt, 64) as Buffer;
+  return `${salt}:${derivedKey.toString('hex')}`;
+}
 
+function verifyPassword(password: string, storedHash: string): boolean {
   try {
-    const { email, password } = req.body || {};
+    const [salt, key] = storedHash.split(':');
+    if (!salt || !key) return false;
+    const derivedKey = scryptSync(password, salt, 64) as Buffer;
+    const keyBuffer = Buffer.from(key, 'hex');
+    if (derivedKey.length !== keyBuffer.length) return false;
+    return timingSafeEqual(derivedKey, keyBuffer);
+  } catch {
+    return false;
+  }
+}
 
-    if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-      return res.status(400).json({ error: 'Email and password are required.' });
+function signToken(payload: Record<string, unknown>, jwtSecret: string): string {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const claims = {
+    ...payload,
+    iat: now,
+    exp: now + TOKEN_EXPIRES_IN_SECONDS,
+  };
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const claimsB64 = base64UrlEncode(JSON.stringify(claims));
+  const signingInput = `${headerB64}.${claimsB64}`;
+  const signature = createHmac('sha256', jwtSecret).update(signingInput).digest();
+  const sigB64 = base64UrlEncode(signature);
+  return `${signingInput}.${sigB64}`;
+}
+
+function jsonError(res: VercelResponse, status: number, message: string, diagnosticCode: string, extra?: Record<string, unknown>) {
+  const payload: Record<string, unknown> = {
+    error: message,
+    diagnostic_code: diagnosticCode,
+  };
+  if (extra && typeof extra === 'object') {
+    Object.assign(payload, extra);
+  }
+  return res.status(status).json(payload);
+}
+
+// ============================================================================
+// Handler
+// ============================================================================
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Outer safety — any exception, even during argument extraction, becomes a JSON error.
+  try {
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', ['POST']);
+      return jsonError(res, 405, `Method ${String(req.method)} Not Allowed`, 'L405-METHOD');
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    let resolvedUser: { id: string; email: string; fullName: string | null } | null = null;
+    // 1. Required env vars
+    const supabaseUrl = readEnv('SUPABASE_URL');
+    const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SECRET_KEY');
+    const jwtSecret = readEnv('JWT_SECRET');
 
-    let localUsers: any[] | null = null;
-    let fetchError: any = null;
+    if (!supabaseUrl || supabaseUrl.startsWith('__FILL') || !supabaseUrl.trim()) {
+      return jsonError(res, 500, 'Server config error: SUPABASE_URL missing.', 'L500-NO-SB-URL');
+    }
+    if (!serviceKey || serviceKey.startsWith('__FILL') || !serviceKey.trim()) {
+      return jsonError(res, 500, 'Server config error: SUPABASE_SERVICE_ROLE_KEY missing.', 'L500-NO-SB-KEY');
+    }
+    if (!jwtSecret || jwtSecret.startsWith('change-me') || !jwtSecret.trim()) {
+      return jsonError(res, 500, 'Server config error: JWT_SECRET missing.', 'L500-NO-JWT-SECRET');
+    }
 
+    // 2. Supabase client init (its own try/catch)
+    let supabaseAdmin: ReturnType<typeof createClient>;
     try {
-      const localRes = await supabaseAdmin
-        .from('users')
-        .select('id, email, password_hash, full_name, is_active')
-        .eq('email', normalizedEmail)
-        .limit(1);
-      localUsers = localRes.data;
-      fetchError = localRes.error;
-      if (fetchError) {
-        console.error(
-          `[LOGIN][public.users lookup ERROR] email=${normalizedEmail} code=${JSON.stringify(
-            (fetchError as any)?.code ?? null
-          )} message=${JSON.stringify((fetchError as any)?.message ?? null)} details=${JSON.stringify(
-            (fetchError as any)?.details ?? null
-          )} hint=${JSON.stringify((fetchError as any)?.hint ?? null)}`
-        );
-      }
-    } catch (selectErr) {
-      fetchError = selectErr;
-      console.error(
-        `[LOGIN][public.users lookup EXCEPTION] email=${normalizedEmail} err=${
-          selectErr instanceof Error ? `${selectErr.name}: ${selectErr.message}` : String(selectErr)
-        }`
-      );
+      supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      return jsonError(res, 500, `Failed to init Supabase: ${msg}`, 'L500-SB-INIT', { raw: msg });
     }
 
-    if (!fetchError && localUsers && localUsers.length > 0) {
-      const localUser = localUsers[0];
-      if (localUser.is_active === false) {
-        return res.status(403).json({ error: 'Account is disabled. Contact administrator.' });
-      }
-
-      const storedHash: string = localUser.password_hash || '';
-      const isScryptFormat = /^[0-9a-f]{32}:[0-9a-f]{128}$/i.test(storedHash);
-      let passwordValid = false;
-      let needsRehash = false;
-
-      if (isScryptFormat) {
-        passwordValid = verifyPassword(password, storedHash);
-      } else {
-        const unprefixed = storedHash.startsWith('PLAINTEXT:')
-          ? storedHash.slice('PLAINTEXT:'.length)
-          : storedHash;
-        if (unprefixed && unprefixed.length > 0 && password === unprefixed) {
-          passwordValid = true;
-          needsRehash = true;
-        }
-      }
-
-      if (passwordValid) {
-        if (needsRehash) {
-          try {
-            const newHash = hashPassword(password);
-            const { error: updateError } = await supabaseAdmin
-              .from('users')
-              .update({ password_hash: newHash })
-              .eq('id', localUser.id);
-            if (updateError) {
-              console.error(
-                `[LOGIN][WARN] Failed to rehash password for user id=${localUser.id} code=${JSON.stringify(
-                  (updateError as any)?.code ?? null
-                )} message=${JSON.stringify((updateError as any)?.message ?? null)}`
-              );
-            }
-          } catch (rehashErr) {
-            console.error(
-              '[LOGIN][WARN] Exception during password rehash:',
-              rehashErr instanceof Error ? `${rehashErr.name}: ${rehashErr.message}` : String(rehashErr)
-            );
-          }
-        }
-
-        resolvedUser = {
-          id: localUser.id,
-          email: localUser.email,
-          fullName: localUser.full_name,
-        };
-      } else {
-        console.log(
-          `[LOGIN] public.users row found for ${normalizedEmail} but password did not match local hash; falling back to Supabase Auth.`
-        );
-      }
-    } else {
-      console.log(
-        `[LOGIN] No matching public.users row for ${normalizedEmail} (fetchError=${
-          fetchError ? 'YES' : 'no'
-        }); attempting Supabase Auth sign-in.`
-      );
+    // 3. Request body / creds
+    let email = '';
+    let password = '';
+    try {
+      const raw = (req.body ?? {}) as any;
+      email = typeof raw.email === 'string' ? raw.email : '';
+      password = typeof raw.password === 'string' ? raw.password : '';
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      return jsonError(res, 400, `Could not read body: ${msg}`, 'L400-BODY');
+    }
+    if (!email || !password) {
+      return jsonError(res, 400, 'Email and password are required.', 'L400-CREDS');
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return jsonError(res, 400, 'A valid email address is required.', 'L400-EMAIL-FMT');
     }
 
-    if (!resolvedUser) {
-      console.log(
-        `[LOGIN] Calling supabase.auth.signInWithPassword for ${normalizedEmail} (using ${
-          supabaseAuth !== supabaseAdmin ? 'anon key client' : 'service role client as fallback'
-        })`
-      );
+    let resolvedUser: { id: string; email: string; fullName: string | null } | null = null;
+    let lastSbCode: string | null = null;
+    let lastSbMsg: string | null = null;
 
-      let signInRes = await supabaseAuth.auth.signInWithPassword({
+    // ========================================================================
+    // STEP 1 — Supabase Auth signInWithPassword (first priority)
+    // ========================================================================
+    try {
+      const signIn = await supabaseAdmin.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
-
-      if (signInRes.error && supabaseAuth !== supabaseAdmin) {
-        const failedCode = (signInRes.error as any)?.code || '';
-        const failedMsg = (signInRes.error as any)?.message || '';
-        console.log(
-          `[LOGIN] Anon-key signInWithPassword failed for ${normalizedEmail}: code=${JSON.stringify(
-            failedCode
-          )} message=${JSON.stringify(failedMsg)}. Retrying with admin client.`
-        );
-        signInRes = await supabaseAdmin.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
-        });
-      }
-
-      if (signInRes.error) {
-        const sbCode: string = (signInRes.error as any)?.code ?? '';
-        const sbMessage: string = signInRes.error.message ?? '';
-        const sbStatus: number | undefined = (signInRes.error as any)?.status as any;
-        console.error(
-          `[LOGIN][Supabase Auth signInWithPassword FAILED] email=${normalizedEmail} code=${JSON.stringify(
-            sbCode
-          )} status=${JSON.stringify(sbStatus)} message=${JSON.stringify(sbMessage)}`
-        );
-
-        if (sbCode === 'email_not_confirmed' || /email not confirmed/i.test(sbMessage)) {
-          console.log(
-            `[LOGIN] email_not_confirmed detected for ${normalizedEmail}. Attempting admin auto-confirm (requires SERVICE_ROLE_KEY).`
-          );
-          try {
-            const list = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-            const userList: any[] =
-              (list as any)?.data?.users || (list as any)?.users || [];
-            const match = userList.find(
-              (u: any) => (u.email || '').toLowerCase() === normalizedEmail
-            );
-            if (match) {
-              const updated = await supabaseAdmin.auth.admin.updateUserById(match.id, {
-                emailConfirm: true,
-              });
-              if (updated.user) {
-                console.log(
-                  `[LOGIN] Auto-confirmed email for user id=${match.id}. Retrying signInWithPassword.`
-                );
-                let retry = await supabaseAuth.auth.signInWithPassword({
-                  email: normalizedEmail,
-                  password,
-                });
-                if (retry.error && supabaseAuth !== supabaseAdmin) {
-                  retry = await supabaseAdmin.auth.signInWithPassword({
-                    email: normalizedEmail,
-                    password,
-                  });
-                }
-                if (!retry.error && retry.data && retry.data.user) {
-                  const userId = retry.data.user.id;
-                  const userEmail = retry.data.user.email || normalizedEmail;
-                  const m: any = retry.data.user.user_metadata || {};
-                  const dName = m.full_name || m.name || m.display_name || null;
-                  resolvedUser = { id: userId, email: userEmail, fullName: dName };
-                  try {
-                    const { data: existing } = await supabaseAdmin
-                      .from('users')
-                      .select('id')
-                      .eq('id', userId)
-                      .limit(1);
-                    if (!existing || existing.length === 0) {
-                      await supabaseAdmin.from('users').insert([
-                        {
-                          id: userId,
-                          email: userEmail,
-                          password_hash: '',
-                          full_name: dName,
-                          is_active: true,
-                        },
-                      ]);
-                    }
-                  } catch {
-                    /* ignore mirror step failure */
-                  }
-                } else {
-                  const rCode = (retry.error as any)?.code ?? '';
-                  const rMsg = retry.error?.message ?? '';
-                  console.error(
-                    `[LOGIN] After auto-confirm retry, signIn still failed for ${normalizedEmail}. code=${JSON.stringify(
-                      rCode
-                    )} message=${JSON.stringify(rMsg)}`
-                  );
-                }
-              } else {
-                console.error(
-                  `[LOGIN] supabaseAdmin.auth.admin.updateUserById returned no user for ${normalizedEmail}.`
-                );
-              }
-            } else {
-              console.log(
-                `[LOGIN] admin.listUsers did not find ${normalizedEmail} in auth.users table (only in public.users? check dashboards).`
-              );
-            }
-          } catch (adminErr) {
-            console.error(
-              `[LOGIN] Admin auto-confirm recovery threw for ${normalizedEmail}:`,
-              adminErr instanceof Error ? `${adminErr.name}: ${adminErr.message}` : String(adminErr)
-            );
-          }
-        }
-
-        if (!resolvedUser) {
-          return res.status(401).json({
-            error: sbMessage || 'Invalid email or password.',
-            diagnostic_code: 'L401-SUPABASE-AUTH',
-            supabase: {
-              code: sbCode || null,
-              status: sbStatus || null,
-            },
-          });
-        }
-      }
-
-      if (!resolvedUser && signInRes.data && signInRes.data.user) {
-        const supabaseUserId = signInRes.data.user.id;
-        const supabaseEmail = signInRes.data.user.email || normalizedEmail;
-        const meta: any = signInRes.data.user.user_metadata || {};
+      if (!signIn.error && signIn.data && signIn.data.user) {
+        const u = signIn.data.user;
+        const meta: any = u.user_metadata || {};
         const displayName = meta.full_name || meta.name || meta.display_name || null;
-
+        resolvedUser = {
+          id: u.id,
+          email: u.email || normalizedEmail,
+          fullName: displayName,
+        };
+        // (Non-fatal mirror to public.users)
         try {
-          const { data: existing, error: lookupError } = await supabaseAdmin
+          const { data: existing, error: lookupErr } = await supabaseAdmin
             .from('users')
             .select('id, email, full_name, is_active')
-            .eq('id', supabaseUserId)
+            .eq('id', u.id)
             .limit(1);
-
-          if (!lookupError && existing && existing.length > 0) {
-            const existingRow = existing[0];
-            if (existingRow.is_active === false) {
-              return res
-                .status(403)
-                .json({ error: 'Account is disabled. Contact administrator.' });
+          if (!lookupErr && existing && existing.length > 0) {
+            const row = (existing as any[])[0];
+            if (row.is_active === false) {
+              return jsonError(res, 403, 'Account is disabled. Contact administrator.', 'L403-DISABLED');
             }
-            resolvedUser = {
-              id: existingRow.id,
-              email: existingRow.email,
-              fullName: existingRow.full_name || displayName,
-            };
+            if (row.full_name) {
+              resolvedUser.fullName = row.full_name;
+            }
           } else {
-            try {
-              await supabaseAdmin.from('users').insert([
-                {
-                  id: supabaseUserId,
-                  email: supabaseEmail,
-                  password_hash: '',
-                  full_name: displayName,
-                  is_active: true,
-                },
-              ]);
-            } catch (insertErr) {
-              console.error(
-                '[LOGIN][WARN] Could not mirror auth user into public.users:',
-                insertErr instanceof Error ? `${insertErr.name}: ${insertErr.message}` : String(insertErr)
-              );
-            }
-            resolvedUser = {
-              id: supabaseUserId,
-              email: supabaseEmail,
-              fullName: displayName,
-            };
+            await supabaseAdmin.from('users').insert([
+              {
+                id: u.id,
+                email: resolvedUser.email,
+                password_hash: '',
+                full_name: displayName,
+                is_active: true,
+              },
+            ]).catch(() => { /* ignore */ });
           }
-        } catch (mirrorErr) {
-          console.error(
-            '[LOGIN][WARN] Mirror step failed, proceeding with raw auth user:',
-            mirrorErr instanceof Error ? `${mirrorErr.name}: ${mirrorErr.message}` : String(mirrorErr)
-          );
-          resolvedUser = {
-            id: supabaseUserId,
-            email: supabaseEmail,
-            fullName: displayName,
-          };
+        } catch {
+          /* mirror failure is non-fatal */
         }
+      } else if (signIn.error) {
+        lastSbCode = (signIn.error as any)?.code || '';
+        lastSbMsg = signIn.error.message || '';
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      // If Supabase itself throws, that's a 500 with details — not a generic crash.
+      return jsonError(res, 500, `Supabase Auth call failed: ${msg}`, 'L500-SB-SIGNIN-THROW', { raw: msg });
+    }
+
+    // ========================================================================
+    // STEP 2 — Auto-confirm recovery (email_not_confirmed)
+    // ========================================================================
+    if (!resolvedUser && (lastSbCode === 'email_not_confirmed' || /email not confirmed/i.test(lastSbMsg || ''))) {
+      try {
+        const list = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+        const usersList: any[] = (list as any)?.data?.users || (list as any)?.users || [];
+        const match = usersList.find((u: any) => (u.email || '').toLowerCase() === normalizedEmail);
+        if (match) {
+          await supabaseAdmin.auth.admin.updateUserById(match.id, { email_confirm: true });
+          const retry = await supabaseAdmin.auth.signInWithPassword({
+            email: normalizedEmail,
+            password,
+          });
+          if (!retry.error && retry.data && retry.data.user) {
+            const u = retry.data.user;
+            const meta: any = u.user_metadata || {};
+            resolvedUser = {
+              id: u.id,
+              email: u.email || normalizedEmail,
+              fullName: meta.full_name || meta.name || meta.display_name || null,
+            };
+          } else if (retry.error) {
+            lastSbCode = (retry.error as any)?.code || '';
+            lastSbMsg = retry.error.message || '';
+          }
+        }
+      } catch {
+        /* recovery failure is non-fatal; fall through to local users step */
       }
     }
 
+    // ========================================================================
+    // STEP 3 — Fallback: local public.users (users created in-app Users tab)
+    // ========================================================================
     if (!resolvedUser) {
-      console.error(
-        `[LOGIN] Unresolved user at final gate for ${normalizedEmail} -> 401.`
-      );
-      return res.status(401).json({
-        error: 'Invalid email or password.',
-        diagnostic_code: 'L401-NO-RESOLVED-USER',
+      try {
+        const { data: rows, error: qErr } = await supabaseAdmin
+          .from('users')
+          .select('id, email, password_hash, full_name, is_active')
+          .eq('email', normalizedEmail)
+          .limit(1);
+
+        if (!qErr && rows && rows.length > 0) {
+          const row = (rows as any[])[0];
+          if (row.is_active === false) {
+            return jsonError(res, 403, 'Account is disabled. Contact administrator.', 'L403-LOCAL-DISABLED');
+          }
+          const storedHash: string = row.password_hash || '';
+          const isScrypt = /^[0-9a-f]{32}:[0-9a-f]{128}$/i.test(storedHash);
+          let pwOk = false;
+          let rehash = false;
+          if (isScrypt) {
+            pwOk = verifyPassword(password, storedHash);
+          } else {
+            const unprefixed = storedHash.startsWith('PLAINTEXT:')
+              ? storedHash.slice('PLAINTEXT:'.length)
+              : storedHash;
+            if (unprefixed && password === unprefixed) {
+              pwOk = true;
+              rehash = true;
+            }
+          }
+          if (pwOk) {
+            resolvedUser = {
+              id: row.id,
+              email: row.email,
+              fullName: row.full_name,
+            };
+            if (rehash) {
+              try {
+                const newHash = hashPassword(password);
+                await supabaseAdmin.from('users').update({ password_hash: newHash }).eq('id', row.id);
+              } catch { /* ignore rehash failure */ }
+            }
+          }
+        }
+      } catch {
+        /* local lookup failure is non-fatal */
+      }
+    }
+
+    // ========================================================================
+    // Final gate
+    // ========================================================================
+    if (!resolvedUser) {
+      const msg =
+        lastSbMsg && lastSbCode
+          ? `${lastSbMsg} (code: ${lastSbCode})`
+          : lastSbMsg || 'Invalid email or password.';
+      return jsonError(res, 401, msg, 'L401-NO-USER', {
+        supabase: { code: lastSbCode },
       });
     }
 
-    const token = signToken({ userId: resolvedUser.id, email: resolvedUser.email });
-
-    const cookieOptions = [`HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=${60 * 60 * 24 * 7}`];
-    if (process.env.NODE_ENV === 'production') {
-      cookieOptions.push('Secure');
+    // ========================================================================
+    // Issue token + respond
+    // ========================================================================
+    let token: string;
+    try {
+      token = signToken(
+        { userId: resolvedUser.id, email: resolvedUser.email },
+        jwtSecret
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      return jsonError(res, 500, `Failed to sign token: ${msg}`, 'L500-TOKEN', { raw: msg });
     }
-    res.setHeader('Set-Cookie', `auth_token=${token}; ${cookieOptions.join('; ')}`);
 
-    console.log(`[LOGIN] SUCCESS for ${normalizedEmail} (id=${resolvedUser.id})`);
+    try {
+      const parts = ['HttpOnly', 'SameSite=Lax', 'Path=/', `Max-Age=${TOKEN_EXPIRES_IN_SECONDS}`];
+      if (process.env.NODE_ENV === 'production') parts.push('Secure');
+      res.setHeader('Set-Cookie', `auth_token=${token}; ${parts.join('; ')}`);
+    } catch {
+      /* cookie write is nice-to-have; body token is sufficient */
+    }
+
     return res.status(200).json({
       token,
       user: {
@@ -371,13 +311,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fullName: resolvedUser.fullName,
       },
     });
-  } catch (error) {
-    const errMsg =
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error || '');
-    console.error(`[LOGIN][500] Unexpected handler error for email=${(req.body as any)?.email ?? '<unknown>'}:`, errMsg);
-    return res.status(500).json({
-      error: 'Internal server error.',
-      diagnostic_code: 'L500-CATCH-ALL',
-    });
+  } catch (outer) {
+    const msg =
+      outer instanceof Error
+        ? `${outer.name}: ${outer.message}`
+        : String(outer || '');
+    return jsonError(res, 500, `Unexpected server error: ${msg}`, 'L500-OUTER', { raw: msg });
   }
 }

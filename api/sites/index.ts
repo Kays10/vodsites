@@ -16,10 +16,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!serviceKey) {
     return res.status(500).json({ error: 'Supabase service/secret key not configured' });
   }
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    serviceKey
-  );
+  const supabase = createClient(process.env.SUPABASE_URL, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   if (req.method === 'GET') {
     try {

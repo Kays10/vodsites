@@ -246,7 +246,6 @@ function App() {
     <div className="container">
       <div className="header">
         <div className="header-content">
-          <div className="header-spacer" aria-hidden="true"></div>
           <img src="/logo.svg" alt="VOD GROUP" className="header-logo" />
           <div className="header-user">
             <span className="user-email" title={user?.email ?? ''}>

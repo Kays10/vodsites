@@ -131,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('Error deleting local user row:', deleteLocalError);
       }
 
-      return res.status(204).send();
+      return res.status(204).end();
     } catch (error) {
       console.error('Delete user unexpected error:', error);
       return res.status(500).json({ error: 'Internal server error.' });

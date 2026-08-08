@@ -86,6 +86,7 @@ body {
   height: auto;
   display: block;
   margin: 0 auto;
+  filter: brightness(0) invert(1);
 }
 
 .header-content h1 {
