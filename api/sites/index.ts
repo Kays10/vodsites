@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Supabase service/secret key not configured' });
     }
 
-    const supabase = makeSupabase();
+    const supabase = await makeSupabase();
 
     if (req.method === 'GET') {
       const { data, error } = await supabase

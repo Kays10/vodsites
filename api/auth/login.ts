@@ -97,9 +97,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Supabase client init (its own try/catch)
-    let supabaseAdmin: ReturnType<typeof makeSupabase>;
+    let supabaseAdmin: Awaited<ReturnType<typeof makeSupabase>>;
     try {
-      supabaseAdmin = makeSupabase();
+      supabaseAdmin = await makeSupabase();
     } catch (e) {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       return jsonError(res, 500, `Failed to init Supabase: ${msg}`, 'L500-SB-INIT', { raw: msg });
