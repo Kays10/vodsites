@@ -5,6 +5,54 @@ import LoginPage from './auth/LoginPage';
 
 const API_BASE = '/api';
 
+// ─── Password Prompt Modal ────────────────────────────────────────────────────
+interface PasswordPromptProps {
+  message: string;
+  onConfirm: (password: string) => void;
+  onCancel: () => void;
+}
+function PasswordPrompt({ message, onConfirm, onCancel }: PasswordPromptProps) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const submit = () => {
+    if (!value.trim()) { setError('Password is required.'); return; }
+    onConfirm(value);
+  };
+  return (
+    <div className="modal-overlay password-prompt" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Confirm Delete</h2>
+          <button className="modal-close" onClick={onCancel} aria-label="Cancel">×</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#374151' }}>{message}</p>
+          {error && (
+            <div className="login-alert" role="alert" style={{ marginBottom: 16 }}>{error}</div>
+          )}
+          <div className="form-group">
+            <label htmlFor="confirm-password">Your Password</label>
+            <input
+              id="confirm-password"
+              type="password"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+              placeholder="Enter your password to confirm"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-danger" onClick={submit}>Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
   const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
 
@@ -17,52 +65,62 @@ function App() {
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [servicesText, setServicesText] = useState('');
   const [isAddingNewSite, setIsAddingNewSite] = useState(false);
+  const [passwordPrompt, setPasswordPrompt] = useState<{
+    message: string;
+    onConfirm: (pw: string) => void;
+  } | null>(null);
 
   const authFetch = useCallback(
     (input: RequestInfo, init?: RequestInit): Promise<Response> => {
       const headers = new Headers(init?.headers || {});
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-      if (!headers.has('Content-Type') && init?.body && typeof init.body === 'string') {
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      if (!headers.has('Content-Type') && init?.body && typeof init.body === 'string')
         headers.set('Content-Type', 'application/json');
-      }
       return fetch(input, { ...init, headers });
     },
     [token]
   );
 
-  const handleLogout = useCallback(async () => {
-    await logout();
-  }, [logout]);
+  const handleLogout = useCallback(async () => { await logout(); }, [logout]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      void fetchSites();
-    }
+    if (isAuthenticated) void fetchSites();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    return () => { document.body.style.overflow = 'unset'; };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        if (!isModalOpen && isAuthenticated) openAddModal();
+      }
+      if (e.key === 'Escape' && isModalOpen) closeModal();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, isAuthenticated]);
 
   const fetchSites = useCallback(async () => {
     setError(null);
     setLoading(true);
-
     try {
       const response = await authFetch(`${API_BASE}/sites`);
-      if (response.status === 401) {
-        await handleLogout();
-        return;
-      }
-      if (!response.ok) {
-        throw new Error('Failed to fetch sites');
-      }
+      if (response.status === 401) { await handleLogout(); return; }
+      if (!response.ok) throw new Error('Failed to fetch sites');
       const data = await response.json();
       const sitesList = Array.isArray(data) ? data : [];
-      
       const formattedSites: Site[] = sitesList.map((site: any) => ({
         id: site.id,
         name: site.name,
         group: site.group,
-        services: Array.isArray(site.services) ? site.services : (typeof site.services === 'string' ? JSON.parse(site.services) : []),
+        services: Array.isArray(site.services)
+          ? site.services
+          : (typeof site.services === 'string' ? JSON.parse(site.services) : []),
         vpn: site.vpn || '',
         pms: site.pms || '',
         hsia: site.hsia || '',
@@ -76,43 +134,15 @@ function App() {
         wlanController: site.wlan_controller || '',
         wlanControllerUrl: site.wlan_controller_url || '',
         notes: site.notes || '',
-        other: site.other || ''
+        other: site.other || '',
       }));
       setSites(formattedSites);
-    } catch (error) {
-      console.error('Error fetching sites from DB:', error);
-      setError(error instanceof Error ? error.message : 'Failed to fetch sites');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch sites');
     } finally {
       setLoading(false);
     }
   }, [authFetch, handleLogout]);
-
-  useEffect(() => {
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeElement = document.activeElement;
-      if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        if (!isModalOpen && isAuthenticated) {
-          openAddModal();
-        }
-      }
-      if (e.key === 'Escape' && isModalOpen) {
-        closeModal();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen, isAuthenticated]);
 
   const filteredSites = sites.filter(site => {
     const query = searchQuery.toLowerCase();
@@ -126,84 +156,95 @@ function App() {
 
   const openAddModal = useCallback(() => {
     const newSite: Site = {
-      id: Date.now().toString(),
-      name: '',
-      group: '',
-      services: [],
-      vpn: '',
-      pms: '',
-      hsia: '',
-      ip: '',
-      iptvSystem: '',
-      iptvUrl: '',
-      castingUrl: '',
-      headend: '',
-      headendUrl: '',
-      switches: '',
-      wlanController: '',
-      wlanControllerUrl: '',
-      notes: '',
-      other: '',
+      id: Date.now().toString(), name: '', group: '', services: [],
+      vpn: '', pms: '', hsia: '', ip: '', iptvSystem: '', iptvUrl: '',
+      castingUrl: '', headend: '', headendUrl: '', switches: '',
+      wlanController: '', wlanControllerUrl: '', notes: '', other: '',
     };
-    setSelectedSite(null);
-    setIsAddingNewSite(true);
-    setEditingSite(newSite);
-    setServicesText('');
-    setIsModalOpen(true);
-    document.body.style.overflow = 'hidden';
+    setSelectedSite(null); setIsAddingNewSite(true); setEditingSite(newSite);
+    setServicesText(''); setIsModalOpen(true); document.body.style.overflow = 'hidden';
   }, []);
 
   const openEditModal = useCallback((site: Site) => {
-    setSelectedSite(site);
-    setIsAddingNewSite(false);
-    setEditingSite({ ...site });
-    setServicesText(site.services.join('\n'));
-    setIsModalOpen(true);
+    setSelectedSite(site); setIsAddingNewSite(false); setEditingSite({ ...site });
+    setServicesText(site.services.join('\n')); setIsModalOpen(true);
     document.body.style.overflow = 'hidden';
   }, []);
 
   const closeModal = useCallback(() => {
-    setIsModalOpen(false);
-    setSelectedSite(null);
-    setEditingSite(null);
-    setIsAddingNewSite(false);
-    document.body.style.overflow = 'unset';
+    setIsModalOpen(false); setSelectedSite(null); setEditingSite(null);
+    setIsAddingNewSite(false); document.body.style.overflow = 'unset';
   }, []);
 
   const handleSaveAttempt = useCallback(async () => {
     if (!editingSite) return;
     const siteToSave: Site = {
       ...editingSite,
-      services: servicesText.split('\n').filter(s => s.trim() !== '')
+      services: servicesText.split('\n').filter(s => s.trim() !== ''),
     };
     try {
       let response: Response;
       if (isAddingNewSite) {
         response = await authFetch(`${API_BASE}/sites`, {
           method: 'POST',
-          body: JSON.stringify(siteToSave)
+          body: JSON.stringify(siteToSave),
         });
       } else {
         response = await authFetch(`${API_BASE}/sites/${selectedSite?.id}`, {
           method: 'PUT',
-          body: JSON.stringify(siteToSave)
+          body: JSON.stringify(siteToSave),
         });
       }
-      if (response.status === 401) {
-        await handleLogout();
-        return;
-      }
+      if (response.status === 401) { await handleLogout(); return; }
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(errorData.error || 'Failed to save site');
       }
       closeModal();
       await fetchSites();
-    } catch (error) {
-      console.error('Error saving site:', error);
-      alert(error instanceof Error ? error.message : 'Failed to save site');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save site');
     }
   }, [editingSite, servicesText, isAddingNewSite, selectedSite, closeModal, fetchSites, authFetch, handleLogout]);
+
+  const handleDeleteSite = useCallback(() => {
+    if (!selectedSite) return;
+    setPasswordPrompt({
+      message: `Delete "${selectedSite.name}"? This cannot be undone.`,
+      onConfirm: async (password: string) => {
+        setPasswordPrompt(null);
+        // Verify password before deleting
+        try {
+          const verifyResp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user?.email, password }),
+          });
+          if (!verifyResp.ok) {
+            alert('Incorrect password. Site was not deleted.');
+            return;
+          }
+        } catch {
+          alert('Could not verify password. Site was not deleted.');
+          return;
+        }
+        try {
+          const response = await authFetch(`${API_BASE}/sites/${selectedSite.id}`, {
+            method: 'DELETE',
+          });
+          if (response.status === 401) { await handleLogout(); return; }
+          if (!response.ok && response.status !== 204) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || 'Failed to delete site');
+          }
+          closeModal();
+          await fetchSites();
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'Failed to delete site');
+        }
+      },
+    });
+  }, [selectedSite, user, authFetch, handleLogout, closeModal, fetchSites]);
 
   const handleInputChange = useCallback((field: keyof Site, value: string) => {
     if (!editingSite) return;
@@ -211,19 +252,17 @@ function App() {
       let newIp = value.trim();
       if (newIp && newIp !== '-' && !newIp.includes('/ods/admin/')) {
         newIp = newIp.replace(/\/+$/, '') + '/ods/admin/';
-      } else if (newIp === '') {
-        newIp = '-';
-      }
+      } else if (newIp === '') newIp = '-';
       setEditingSite({ ...editingSite, [field]: newIp });
     } else {
       setEditingSite({ ...editingSite, [field]: value });
     }
   }, [editingSite]);
 
-  const isValidUrl = (url: string) => {
-    return url.startsWith('http://') || url.startsWith('https://');
-  };
+  const isValidUrl = (url: string) =>
+    url.startsWith('http://') || url.startsWith('https://');
 
+  // ─── Render: loading / not authenticated ──────────────────────────────────
   if (authLoading) {
     return (
       <div className="login-page">
@@ -238,12 +277,12 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage />;
-  }
+  if (!isAuthenticated) return <LoginPage />;
 
+  // ─── Render: main app ──────────────────────────────────────────────────────
   return (
     <div className="container">
+      {/* Header */}
       <div className="header">
         <div className="header-content">
           <img src="/logo.svg" alt="VOD GROUP" className="header-logo" />
@@ -258,309 +297,209 @@ function App() {
         </div>
       </div>
 
+      {/* Search + Add */}
       <div className="search-bar">
         <input
           type="text"
           className="search-input"
           placeholder="Search sites by name, group, services, or IP..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={e => setSearchQuery(e.target.value)}
           aria-label="Search sites"
         />
-        <button
-          className="btn btn-primary"
-          onClick={openAddModal}
-        >
+        <button className="btn btn-primary" onClick={openAddModal}>
           Add New Site
         </button>
       </div>
 
+      {/* Sites grid */}
       <div className="sites-wrapper">
         <div className="sites-grid">
-        {loading ? (
-          <div className="empty-state">
-            <h3>Loading...</h3>
-            <p>Please wait while we load the sites</p>
-          </div>
-        ) : error ? (
-          <div className="empty-state">
-            <h3>Error</h3>
-            <p>{error}</p>
-            <button
-              className="btn btn-primary"
-              onClick={fetchSites}
-              style={{ marginTop: '1rem' }}
-            >
-              Retry
-            </button>
-          </div>
-        ) : filteredSites.length === 0 ? (
-          <div className="empty-state">
-            <h3>No sites found</h3>
-            <p>Try a different search term or add a new site</p>
-          </div>
-        ) : (
-          filteredSites.map((site) => (
-            <div
-              key={site.id}
-              className="site-card"
-              onClick={() => {
-                setSelectedSite(site);
-                openEditModal(site);
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  setSelectedSite(site);
-                  openEditModal(site);
-                }
-              }}
-            >
-              <h3 className="site-name">{site.name || 'Unnamed Site'}</h3>
-              {site.group && <span className="site-group">{site.group}</span>}
-              <div className="site-services">
-                {site.services.slice(0, 5).map((service, i) => (
-                  <span key={i} className="service-tag">{service}</span>
-                ))}
-                {site.services.length > 5 && (
-                  <span className="service-tag">+{site.services.length - 5} more</span>
-                )}
-              </div>
-              {site.ip && <div className="site-ip">{site.ip}</div>}
-              <div className="site-links">
-                {site.iptvUrl && isValidUrl(site.iptvUrl) && (
-                  <a href={site.iptvUrl} target="_blank" rel="noopener noreferrer" className="site-link" onClick={(e) => e.stopPropagation()}>
-                    IPTV
-                  </a>
-                )}
-                {site.headendUrl && isValidUrl(site.headendUrl) && (
-                  <a href={site.headendUrl} target="_blank" rel="noopener noreferrer" className="site-link" onClick={(e) => e.stopPropagation()}>
-                    Headend
-                  </a>
-                )}
-                {site.wlanControllerUrl && isValidUrl(site.wlanControllerUrl) && (
-                  <a href={site.wlanControllerUrl} target="_blank" rel="noopener noreferrer" className="site-link" onClick={(e) => e.stopPropagation()}>
-                    WLAN
-                  </a>
-                )}
-              </div>
+          {loading ? (
+            <div className="empty-state">
+              <h3>Loading...</h3>
+              <p>Please wait while we load the sites</p>
             </div>
-          ))
-        )}
+          ) : error ? (
+            <div className="empty-state">
+              <h3>Error</h3>
+              <p>{error}</p>
+              <button className="btn btn-primary" onClick={fetchSites} style={{ marginTop: '1rem' }}>
+                Retry
+              </button>
+            </div>
+          ) : filteredSites.length === 0 ? (
+            <div className="empty-state">
+              <h3>No sites found</h3>
+              <p>Try a different search term or add a new site</p>
+            </div>
+          ) : (
+            filteredSites.map(site => (
+              <div
+                key={site.id}
+                className="site-card"
+                onClick={() => openEditModal(site)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter') openEditModal(site); }}
+              >
+                <h3 className="site-name">{site.name || 'Unnamed Site'}</h3>
+                {site.group && <span className="site-group">{site.group}</span>}
+                <div className="site-services">
+                  {site.services.slice(0, 5).map((service, i) => (
+                    <span key={i} className="service-tag">{service}</span>
+                  ))}
+                  {site.services.length > 5 && (
+                    <span className="service-tag">+{site.services.length - 5} more</span>
+                  )}
+                </div>
+                {site.ip && <div className="site-ip">{site.ip}</div>}
+                <div className="site-links">
+                  {site.iptvUrl && isValidUrl(site.iptvUrl) && (
+                    <a href={site.iptvUrl} target="_blank" rel="noopener noreferrer"
+                      className="site-link" onClick={e => e.stopPropagation()}>IPTV</a>
+                  )}
+                  {site.headendUrl && isValidUrl(site.headendUrl) && (
+                    <a href={site.headendUrl} target="_blank" rel="noopener noreferrer"
+                      className="site-link" onClick={e => e.stopPropagation()}>Headend</a>
+                  )}
+                  {site.wlanControllerUrl && isValidUrl(site.wlanControllerUrl) && (
+                    <a href={site.wlanControllerUrl} target="_blank" rel="noopener noreferrer"
+                      className="site-link" onClick={e => e.stopPropagation()}>WLAN</a>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      <button
-        className="btn-add"
-        onClick={openAddModal}
-        aria-label="Add new site"
-      >
-        +
-      </button>
+      {/* FAB */}
+      <button className="btn-add" onClick={openAddModal} aria-label="Add new site">+</button>
 
+      {/* Site edit/add modal */}
       {isModalOpen && editingSite && (
         <div className="modal-overlay" onClick={closeModal} role="dialog" aria-modal="true">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{selectedSite ? 'Edit Site' : 'Add New Site'}</h2>
-              <button className="modal-close" onClick={closeModal} aria-label="Close modal">
-                ×
-              </button>
+              <h2>{isAddingNewSite ? 'Add New Site' : 'Edit Site'}</h2>
+              <button className="modal-close" onClick={closeModal} aria-label="Close modal">×</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
                 <div className="form-group full-width">
                   <label htmlFor="site-name">Site Name</label>
-                  <input
-                    id="site-name"
-                    type="text"
-                    value={editingSite.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Enter site name"
-                  />
+                  <input id="site-name" type="text" value={editingSite.name}
+                    onChange={e => handleInputChange('name', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Enter site name" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-group">Group</label>
-                  <input
-                    id="site-group"
-                    type="text"
-                    value={editingSite.group}
-                    onChange={(e) => handleInputChange('group', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Enter group"
-                  />
+                  <input id="site-group" type="text" value={editingSite.group}
+                    onChange={e => handleInputChange('group', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Enter group" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-ip">IP Address</label>
-                  <input
-                    id="site-ip"
-                    type="text"
-                    value={editingSite.ip}
-                    onChange={(e) => handleInputChange('ip', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Enter IP address"
-                  />
+                  <input id="site-ip" type="text" value={editingSite.ip}
+                    onChange={e => handleInputChange('ip', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Enter IP address" />
                 </div>
                 <div className="form-group full-width">
                   <label htmlFor="site-services">Services (one per line)</label>
-                  <textarea
-                    id="site-services"
-                    value={servicesText}
-                    onChange={(e) => setServicesText(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    placeholder="Enter services, one per line"
-                    style={{ zIndex: 100 }}
-                  />
+                  <textarea id="site-services" value={servicesText}
+                    onChange={e => setServicesText(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => e.stopPropagation()}
+                    placeholder="Enter services, one per line" style={{ zIndex: 100 }} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-vpn">VPN</label>
-                  <input
-                    id="site-vpn"
-                    type="text"
-                    value={editingSite.vpn}
-                    onChange={(e) => handleInputChange('vpn', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="VPN info"
-                  />
+                  <input id="site-vpn" type="text" value={editingSite.vpn}
+                    onChange={e => handleInputChange('vpn', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="VPN info" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-pms">PMS</label>
-                  <input
-                    id="site-pms"
-                    type="text"
-                    value={editingSite.pms}
-                    onChange={(e) => handleInputChange('pms', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="PMS info"
-                  />
+                  <input id="site-pms" type="text" value={editingSite.pms}
+                    onChange={e => handleInputChange('pms', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="PMS info" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-hsia">HSIA</label>
-                  <input
-                    id="site-hsia"
-                    type="text"
-                    value={editingSite.hsia}
-                    onChange={(e) => handleInputChange('hsia', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="HSIA info"
-                  />
+                  <input id="site-hsia" type="text" value={editingSite.hsia}
+                    onChange={e => handleInputChange('hsia', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="HSIA info" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-iptv-system">IPTV System</label>
-                  <input
-                    id="site-iptv-system"
-                    type="text"
-                    value={editingSite.iptvSystem}
-                    onChange={(e) => handleInputChange('iptvSystem', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="IPTV system"
-                  />
+                  <input id="site-iptv-system" type="text" value={editingSite.iptvSystem}
+                    onChange={e => handleInputChange('iptvSystem', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="IPTV system" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-iptv-url">IPTV URL</label>
-                  <input
-                    id="site-iptv-url"
-                    type="text"
-                    value={editingSite.iptvUrl}
-                    onChange={(e) => handleInputChange('iptvUrl', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="https://..."
-                  />
+                  <input id="site-iptv-url" type="text" value={editingSite.iptvUrl}
+                    onChange={e => handleInputChange('iptvUrl', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="https://..." />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-casting-url">Casting URL</label>
-                  <input
-                    id="site-casting-url"
-                    type="text"
-                    value={editingSite.castingUrl}
-                    onChange={(e) => handleInputChange('castingUrl', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Casting URL"
-                  />
+                  <input id="site-casting-url" type="text" value={editingSite.castingUrl}
+                    onChange={e => handleInputChange('castingUrl', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Casting URL" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-headend">Headend</label>
-                  <input
-                    id="site-headend"
-                    type="text"
-                    value={editingSite.headend}
-                    onChange={(e) => handleInputChange('headend', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Headend info"
-                  />
+                  <input id="site-headend" type="text" value={editingSite.headend}
+                    onChange={e => handleInputChange('headend', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Headend info" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-headend-url">Headend URL</label>
-                  <input
-                    id="site-headend-url"
-                    type="text"
-                    value={editingSite.headendUrl}
-                    onChange={(e) => handleInputChange('headendUrl', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="http://..."
-                  />
+                  <input id="site-headend-url" type="text" value={editingSite.headendUrl}
+                    onChange={e => handleInputChange('headendUrl', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="http://..." />
                 </div>
                 <div className="form-group full-width">
                   <label htmlFor="site-switches">Switches</label>
-                  <textarea
-                    id="site-switches"
-                    value={editingSite.switches}
-                    onChange={(e) => handleInputChange('switches', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Switches info"
-                  />
+                  <textarea id="site-switches" value={editingSite.switches}
+                    onChange={e => handleInputChange('switches', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Switches info" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-wlan">WLAN Controller</label>
-                  <input
-                    id="site-wlan"
-                    type="text"
-                    value={editingSite.wlanController}
-                    onChange={(e) => handleInputChange('wlanController', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="WLAN controller"
-                  />
+                  <input id="site-wlan" type="text" value={editingSite.wlanController}
+                    onChange={e => handleInputChange('wlanController', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="WLAN controller" />
                 </div>
                 <div className="form-group">
                   <label htmlFor="site-wlan-url">WLAN Controller URL</label>
-                  <input
-                    id="site-wlan-url"
-                    type="text"
-                    value={editingSite.wlanControllerUrl}
-                    onChange={(e) => handleInputChange('wlanControllerUrl', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="https://..."
-                  />
+                  <input id="site-wlan-url" type="text" value={editingSite.wlanControllerUrl}
+                    onChange={e => handleInputChange('wlanControllerUrl', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="https://..." />
                 </div>
                 <div className="form-group full-width">
                   <label htmlFor="site-notes">Notes</label>
-                  <textarea
-                    id="site-notes"
-                    value={editingSite.notes}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Additional notes"
-                    rows={4}
-                  />
+                  <textarea id="site-notes" value={editingSite.notes}
+                    onChange={e => handleInputChange('notes', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Additional notes" rows={4} />
                 </div>
                 <div className="form-group full-width">
                   <label htmlFor="site-other">Other</label>
-                  <textarea
-                    id="site-other"
-                    value={editingSite.other}
-                    onChange={(e) => handleInputChange('other', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Other info"
-                    rows={4}
-                  />
+                  <textarea id="site-other" value={editingSite.other}
+                    onChange={e => handleInputChange('other', e.target.value)}
+                    onClick={e => e.stopPropagation()} placeholder="Other info" rows={4} />
                 </div>
               </div>
             </div>
             <div className="modal-footer">
-              <div style={{ flex: 1 }}></div>
+              {!isAddingNewSite && (
+                <button className="btn btn-danger" onClick={handleDeleteSite}>
+                  Delete Site
+                </button>
+              )}
+              <div style={{ flex: 1 }} />
               <button className="btn btn-secondary" onClick={closeModal}>Cancel</button>
               <button className="btn btn-primary" onClick={handleSaveAttempt}>Save</button>
             </div>
@@ -568,7 +507,14 @@ function App() {
         </div>
       )}
 
-
+      {/* Password confirmation prompt */}
+      {passwordPrompt && (
+        <PasswordPrompt
+          message={passwordPrompt.message}
+          onConfirm={passwordPrompt.onConfirm}
+          onCancel={() => setPasswordPrompt(null)}
+        />
+      )}
     </div>
   );
 }
