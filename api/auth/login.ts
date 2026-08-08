@@ -149,8 +149,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
         // (Non-fatal mirror to public.users)
         try {
-          const { data: existing, error: lookupErr } = await supabaseAdmin
-            .from('users')
+          const usersTable = supabaseAdmin.from('users' as any);
+          const { data: existing, error: lookupErr } = await (usersTable as any)
             .select('id, email, full_name, is_active')
             .eq('id', u.id)
             .limit(1);
@@ -163,7 +163,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               resolvedUser.fullName = row.full_name;
             }
           } else {
-            await supabaseAdmin.from('users').insert([
+            (supabaseAdmin.from('users' as any) as any).insert([
               {
                 id: u.id,
                 email: resolvedUser.email,
@@ -171,7 +171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 full_name: displayName,
                 is_active: true,
               },
-            ]).catch(() => { /* ignore */ });
+            ]).then(() => {/* ignore */}).catch(() => {/* ignore */});
           }
         } catch {
           /* mirror failure is non-fatal */
@@ -223,8 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ========================================================================
     if (!resolvedUser) {
       try {
-        const { data: rows, error: qErr } = await supabaseAdmin
-          .from('users')
+        const { data: rows, error: qErr } = await (supabaseAdmin.from('users' as any) as any)
           .select('id, email, password_hash, full_name, is_active')
           .eq('email', normalizedEmail)
           .limit(1);
@@ -258,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (rehash) {
               try {
                 const newHash = hashPassword(password);
-                await supabaseAdmin.from('users').update({ password_hash: newHash }).eq('id', row.id);
+                await (supabaseAdmin.from('users' as any) as any).update({ password_hash: newHash }).eq('id', row.id);
               } catch { /* ignore rehash failure */ }
             }
           }

@@ -21,15 +21,6 @@ function base64UrlDecode(input: string): Buffer {
   return Buffer.from(base64, 'base64');
 }
 
-function base64UrlEncode(buf: Buffer | string): string {
-  const b = typeof buf === 'string' ? Buffer.from(buf, 'utf8') : buf;
-  return b
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
 export function verifyToken(token: string): JwtPayload | null {
   try {
     const parts = token.split('.');
