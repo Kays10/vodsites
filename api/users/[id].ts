@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
+import { makeSupabase } from '../_lib/supabase';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = authenticateRequest(req);
@@ -20,9 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!serviceKey) {
     return res.status(500).json({ error: 'Supabase service/secret key not configured' });
   }
-  const supabase = createClient(process.env.SUPABASE_URL, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const supabase = makeSupabase();
 
   try {
     const { id } = req.query;

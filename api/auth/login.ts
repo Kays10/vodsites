@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
+import { makeSupabase } from '../_lib/supabase';
 
 // ============================================================================
 // Self-contained auth helpers (no imports from _lib/auth, no jsonwebtoken).
@@ -99,9 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 2. Supabase client init (its own try/catch)
     let supabaseAdmin: ReturnType<typeof createClient>;
     try {
-      supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
+      supabaseAdmin = makeSupabase();
     } catch (e) {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       return jsonError(res, 500, `Failed to init Supabase: ${msg}`, 'L500-SB-INIT', { raw: msg });
