@@ -4,6 +4,53 @@ import { useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
 
 const API_BASE = '/api';
+const SAVE_PASSWORD = '2wsx@WSX123';
+
+// ─── Password Prompt ──────────────────────────────────────────────────────────
+function PasswordPrompt({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+
+  const submit = () => {
+    if (value === SAVE_PASSWORD) {
+      onConfirm();
+    } else {
+      setError('Incorrect password.');
+      setValue('');
+    }
+  };
+
+  return (
+    <div className="modal-overlay password-prompt" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Confirm Save</h2>
+          <button className="modal-close" onClick={onCancel} aria-label="Cancel">×</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="login-alert" role="alert" style={{ marginBottom: 16 }}>{error}</div>}
+          <div className="form-group">
+            <label htmlFor="save-password">Enter password to save</label>
+            <input
+              id="save-password"
+              type="password"
+              value={value}
+              onChange={e => { setValue(e.target.value); setError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+              placeholder="Enter password"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <div style={{ flex: 1 }} />
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit}>Confirm</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
@@ -18,6 +65,7 @@ function App() {
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [servicesText, setServicesText] = useState('');
   const [isAddingNewSite, setIsAddingNewSite] = useState(false);
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
 
   const authFetch = useCallback(
     (input: RequestInfo, init?: RequestInit): Promise<Response> => {
@@ -135,7 +183,13 @@ function App() {
     setIsAddingNewSite(false); document.body.style.overflow = 'unset';
   }, []);
 
-  const handleSaveAttempt = useCallback(async () => {
+  const handleSaveAttempt = useCallback(() => {
+    // Show password prompt before saving
+    setShowSavePrompt(true);
+  }, []);
+
+  const doSave = useCallback(async () => {
+    setShowSavePrompt(false);
     if (!editingSite) return;
     const siteToSave: Site = {
       ...editingSite,
@@ -423,6 +477,14 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Password confirmation prompt */}
+      {showSavePrompt && (
+        <PasswordPrompt
+          onConfirm={doSave}
+          onCancel={() => setShowSavePrompt(false)}
+        />
       )}
     </div>
   );
