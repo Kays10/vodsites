@@ -96,7 +96,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Supabase client init (its own try/catch)
-    let supabaseAdmin: Awaited<ReturnType<import('@supabase/supabase-js')['createClient']>>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let supabaseAdmin: any;
     try {
       const { createClient } = await import('@supabase/supabase-js');
       supabaseAdmin = createClient(supabaseUrl, serviceKey, {
