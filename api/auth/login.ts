@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createClient } = require('@supabase/supabase-js');
 
 // ============================================================================
 // Self-contained auth helpers (no imports from _lib/auth, no jsonwebtoken).
@@ -99,7 +101,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let supabaseAdmin: any;
     try {
-      const { createClient } = await import('@supabase/supabase-js');
       supabaseAdmin = createClient(supabaseUrl, serviceKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       });

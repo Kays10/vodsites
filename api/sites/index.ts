@@ -1,19 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createClient } = require('@supabase/supabase-js');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const auth = authenticateRequest(req);
-    if (!auth) {
-      return res.status(401).json({ error: 'Unauthorized. Please log in.' });
-    }
+    if (!auth) return res.status(401).json({ error: 'Unauthorized. Please log in.' });
 
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     if (!url) return res.status(500).json({ error: 'Supabase URL not configured' });
     if (!key) return res.status(500).json({ error: 'Supabase key not configured' });
 
-    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
     if (req.method === 'GET') {

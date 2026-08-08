@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createClient } = require('@supabase/supabase-js');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -11,7 +13,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!url) return res.status(500).json({ error: 'Supabase URL not configured' });
     if (!key) return res.status(500).json({ error: 'Supabase key not configured' });
 
-    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
     const { id } = req.query;
 
