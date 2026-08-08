@@ -1,4 +1,10 @@
-<svg width="200" height="60" viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg">
-  <rect width="200" height="60" fill="#f8c644"/>
-  <text x="20" y="40" font-family="Arial, sans-serif" font-size="30" font-weight="bold" fill="#212936">VOD GROUP</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <rect width="800" height="200" fill="#ffffff"/>
+  <g fill="#1f2937">
+    <path d="M20 30 L150 30 L110 170 L40 170 Z"/>
+    <path d="M205 30 L340 30 L300 170 L165 170 Z"/>
+    <ellipse cx="470" cy="100" rx="145" ry="70"/>
+    <path d="M625 30 L625 170 L720 170 Q770 170 770 130 L770 70 Q770 30 720 30 Z M675 70 L715 70 Q730 70 730 88 L730 112 Q730 130 715 130 L675 130 Z"/>
+    <text x="790" y="102" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" fill="#1f2937" text-anchor="middle" transform="rotate(-90, 790, 102)" letter-spacing="2">GROUP</text>
+  </g>
 </svg>

@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" fill="#FFD700" rx="20"/>
-  <text x="50" y="65" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#001F3F" text-anchor="middle" dominant-baseline="middle">VOD</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <rect width="100" height="100" fill="#ffffff" rx="20"/>
+  <g fill="#1f2937">
+    <path d="M18 30 L38 30 L32 72 L24 72 Z"/>
+    <path d="M42 30 L62 30 L56 72 L48 72 Z"/>
+    <ellipse cx="72" cy="51" rx="14" ry="21"/>
+  </g>
 </svg>

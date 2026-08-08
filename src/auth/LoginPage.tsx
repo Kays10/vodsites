@@ -10,6 +10,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setError(null);
     if (!email.trim() || !password) {
       setError('Please enter your email and password.');
@@ -19,9 +20,17 @@ export default function LoginPage() {
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed.');
+      const msg =
+        err instanceof Error && err.message && err.message.trim()
+          ? err.message
+          : 'Login failed. Please try again.';
+      setError(msg);
     } finally {
-      setLoading(false);
+      try {
+        setLoading(false);
+      } catch {
+        setLoading(false);
+      }
     }
   };
 
@@ -29,7 +38,7 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card" role="main" aria-labelledby="login-title">
         <div className="login-header">
-          <div className="login-logo">VOD</div>
+          <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
           <h1 id="login-title">VOD GROUP</h1>
           <p className="login-subtitle">Sign in to access your sites</p>
         </div>

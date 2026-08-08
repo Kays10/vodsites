@@ -43,24 +43,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || 'Login failed');
-    }
-
-    setToken(data.token);
-    setUser(data.user);
     try {
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-    } catch {
-      /* ignore persistence errors */
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      let data: any = {};
+      if (contentType.includes('application/json')) {
+        data = await res.json().catch(() => ({}));
+      } else {
+        try { data = await res.json().catch(() => ({})); } catch {}
+      }
+
+      if (!res.ok) {
+        const message =
+          (typeof data?.error === 'string' && data.error.trim()) ||
+          `Login failed (HTTP ${res.status})`;
+        throw new Error(message);
+      }
+
+      if (!data || !data.token || !data.user) {
+        throw new Error('Login failed: invalid response from server');
+      }
+
+      setToken(data.token);
+      setUser(data.user);
+      try {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      } catch {
+        /* ignore persistence errors */
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Login failed. Please try again.';
+      throw new Error(message);
     }
   }, []);
 

@@ -355,7 +355,7 @@ function App() {
       <div className="login-page">
         <div className="login-card">
           <div className="login-header">
-            <div className="login-logo">VOD</div>
+            <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
             <h1>VOD GROUP</h1>
             <p className="login-subtitle">Loading...</p>
           </div>
@@ -373,7 +373,7 @@ function App() {
       <div className="header">
         <div className="header-content">
           <div className="header-spacer" aria-hidden="true"></div>
-          <h1>VOD GROUP</h1>
+          <img src="/logo.svg" alt="VOD GROUP" className="header-logo" />
           <div className="header-user">
             <span className="user-email" title={user?.email ?? ''}>
               {user?.fullName || user?.email || 'User'}

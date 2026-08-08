@@ -3,47 +3,38 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyPassword, signToken, hashPassword } from '../../_lib/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // #region debug-point A:entry
-  (() => { try {
-    const fs = require('fs'),
-      p = '.dbg/login-not-working.env';
-    let u = 'http://127.0.0.1:7777/event',
-      s = 'login-not-working';
-    try {
-      const e = fs.readFileSync(p, 'utf8');
-      u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-      s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-    } catch {}
-    const bodyEmail = (req.body || {}).email || '';
-    const norm = typeof bodyEmail === 'string' ? bodyEmail.trim().toLowerCase() : '';
-    fetch(u, {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: s,
-        runId: 'pre-fix',
-        hypothesisId: 'A',
-        location: 'api/auth/login.ts:entry',
-        msg: '[DEBUG] Login handler invoked',
-        data: { method: req.method, emailPresent: !!norm, emailLen: norm.length },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    console.error('[DEBUG-LNW-A] entry method=%s email=%s', req.method, norm || '<empty>');
-  } catch {} })();
-  // #endregion
-
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
-  if (!supabaseUrl) {
-    return res.status(500).json({ error: 'Supabase URL not configured' });
+  if (!supabaseUrl || supabaseUrl.startsWith('__FILL') || supabaseUrl.trim() === '') {
+    const err =
+      'SUPABASE_URL is not configured (empty or placeholder). Set it in Vercel Project -> Settings -> Environment Variables, then redeploy.';
+    console.error('[LOGIN][FATAL]', err, 'value=', JSON.stringify(supabaseUrl));
+    return res
+      .status(500)
+      .json({ error: 'Server configuration error. Contact administrator.', diagnostic_code: 'L500-NO-SUPABASE-URL' });
   }
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  if (!serviceKey) {
-    return res.status(500).json({ error: 'Supabase service/secret key not configured' });
+  if (!serviceKey || serviceKey.startsWith('__FILL') || serviceKey.trim() === '') {
+    const err =
+      'SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) is not configured. Set it in Vercel Project -> Settings -> Environment Variables, then redeploy.';
+    console.error('[LOGIN][FATAL]', err);
+    return res.status(500).json({
+      error: 'Server configuration error. Contact administrator.',
+      diagnostic_code: 'L500-NO-SUPABASE-SERVICE-KEY',
+    });
+  }
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret || jwtSecret.startsWith('change-me') || jwtSecret.trim() === '') {
+    console.error('[LOGIN][FATAL] JWT_SECRET is not configured (empty or still default placeholder).');
+    return res.status(500).json({
+      error: 'Server configuration error. Contact administrator.',
+      diagnostic_code: 'L500-NO-JWT-SECRET',
+    });
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
@@ -51,17 +42,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
 
   const anonKey = process.env.SUPABASE_ANON_KEY;
-  const supabaseAuth = anonKey
-    ? createClient(supabaseUrl, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      })
-    : supabaseAdmin;
+  const supabaseAuth =
+    anonKey && !anonKey.startsWith('__FILL') && anonKey.trim() !== ''
+      ? createClient(supabaseUrl, anonKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+      : supabaseAdmin;
 
   try {
     const { email, password } = req.body || {};
 
     if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ error: 'Email and password are required.' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -79,48 +71,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       localUsers = localRes.data;
       fetchError = localRes.error;
       if (fetchError) {
-        console.error('Login: public.users lookup error:', fetchError);
+        console.error(
+          `[LOGIN][public.users lookup ERROR] email=${normalizedEmail} code=${JSON.stringify(
+            (fetchError as any)?.code ?? null
+          )} message=${JSON.stringify((fetchError as any)?.message ?? null)} details=${JSON.stringify(
+            (fetchError as any)?.details ?? null
+          )} hint=${JSON.stringify((fetchError as any)?.hint ?? null)}`
+        );
       }
     } catch (selectErr) {
       fetchError = selectErr;
-      console.error('Login: public.users lookup exception:', selectErr);
-    }
-
-    // #region debug-point B:local-users-lookup
-    (() => { try {
-      const fs = require('fs'),
-        p = '.dbg/login-not-working.env';
-      let u = 'http://127.0.0.1:7777/event',
-        s = 'login-not-working';
-      try {
-        const e = fs.readFileSync(p, 'utf8');
-        u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-        s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-      } catch {}
-      fetch(u, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: s,
-          runId: 'pre-fix',
-          hypothesisId: 'B',
-          location: 'api/auth/login.ts:after-local-users',
-          msg: '[DEBUG] public.users lookup result',
-          data: {
-            hadFetchError: !!fetchError,
-            fetchErrCode: (fetchError || {}).code || null,
-            fetchErrMsg: (fetchError || {}).message || null,
-            rowCount: localUsers ? localUsers.length : null,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
       console.error(
-        '[DEBUG-LNW-B] local-users lookupError=%s rows=%s',
-        fetchError ? 'YES:' + (fetchError.code || fetchError.message || '') : 'no',
-        localUsers ? localUsers.length : 'null'
+        `[LOGIN][public.users lookup EXCEPTION] email=${normalizedEmail} err=${
+          selectErr instanceof Error ? `${selectErr.name}: ${selectErr.message}` : String(selectErr)
+        }`
       );
-    } catch {} })();
-    // #endregion
+    }
 
     if (!fetchError && localUsers && localUsers.length > 0) {
       const localUser = localUsers[0];
@@ -145,44 +111,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      // #region debug-point C:custom-hash-check
-      (() => { try {
-        const fs = require('fs'),
-          p = '.dbg/login-not-working.env';
-        let u = 'http://127.0.0.1:7777/event',
-          s = 'login-not-working';
-        try {
-          const e = fs.readFileSync(p, 'utf8');
-          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-        } catch {}
-        fetch(u, {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: s,
-            runId: 'pre-fix',
-            hypothesisId: 'C',
-            location: 'api/auth/login.ts:custom-hash-check',
-            msg: '[DEBUG] Custom password-hash check result',
-            data: {
-              isScryptFormat,
-              passwordValid,
-              needsRehash,
-              hashEmpty: !storedHash,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        console.error(
-          '[DEBUG-LNW-C] scrypt=%s passwordValid=%s rehashNeeded=%s hashEmpty=%s',
-          isScryptFormat ? 'yes' : 'no',
-          passwordValid ? 'yes' : 'no',
-          needsRehash ? 'yes' : 'no',
-          !storedHash ? 'yes' : 'no'
-        );
-      } catch {} })();
-      // #endregion
-
       if (passwordValid) {
         if (needsRehash) {
           try {
@@ -192,10 +120,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .update({ password_hash: newHash })
               .eq('id', localUser.id);
             if (updateError) {
-              console.error('Failed to rehash password for user', localUser.id, updateError);
+              console.error(
+                `[LOGIN][WARN] Failed to rehash password for user id=${localUser.id} code=${JSON.stringify(
+                  (updateError as any)?.code ?? null
+                )} message=${JSON.stringify((updateError as any)?.message ?? null)}`
+              );
             }
           } catch (rehashErr) {
-            console.error('Exception during password rehash:', rehashErr);
+            console.error(
+              '[LOGIN][WARN] Exception during password rehash:',
+              rehashErr instanceof Error ? `${rehashErr.name}: ${rehashErr.message}` : String(rehashErr)
+            );
           }
         }
 
@@ -206,42 +141,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
       } else {
         console.log(
-          `Login: local user row found for ${normalizedEmail} but password did not match custom hash; falling back to Supabase Auth.`
+          `[LOGIN] public.users row found for ${normalizedEmail} but password did not match local hash; falling back to Supabase Auth.`
         );
       }
     } else {
       console.log(
-        `Login: no matching public.users row for ${normalizedEmail}; attempting Supabase Auth sign-in.`
+        `[LOGIN] No matching public.users row for ${normalizedEmail} (fetchError=${
+          fetchError ? 'YES' : 'no'
+        }); attempting Supabase Auth sign-in.`
       );
     }
 
     if (!resolvedUser) {
-      // #region debug-point D:before-supabase-auth
-      (() => { try {
-        const fs = require('fs'),
-          p = '.dbg/login-not-working.env';
-        let u = 'http://127.0.0.1:7777/event',
-          s = 'login-not-working';
-        try {
-          const e = fs.readFileSync(p, 'utf8');
-          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-        } catch {}
-        fetch(u, {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: s,
-            runId: 'pre-fix',
-            hypothesisId: 'D',
-            location: 'api/auth/login.ts:before-supabase-auth',
-            msg: '[DEBUG] Falling through to Supabase Auth signInWithPassword',
-            data: { usingAnon: supabaseAuth !== supabaseAdmin },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        console.error('[DEBUG-LNW-D] calling supabase auth signIn (anonKey=%s)', supabaseAuth !== supabaseAdmin ? 'yes' : 'no');
-      } catch {} })();
-      // #endregion
+      console.log(
+        `[LOGIN] Calling supabase.auth.signInWithPassword for ${normalizedEmail} (using ${
+          supabaseAuth !== supabaseAdmin ? 'anon key client' : 'service role client as fallback'
+        })`
+      );
 
       let signInRes = await supabaseAuth.auth.signInWithPassword({
         email: normalizedEmail,
@@ -250,8 +166,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (signInRes.error && supabaseAuth !== supabaseAdmin) {
         const failedCode = (signInRes.error as any)?.code || '';
+        const failedMsg = (signInRes.error as any)?.message || '';
         console.log(
-          `Login: anon-key sign-in failed (${failedCode}); retrying with admin client.`
+          `[LOGIN] Anon-key signInWithPassword failed for ${normalizedEmail}: code=${JSON.stringify(
+            failedCode
+          )} message=${JSON.stringify(failedMsg)}. Retrying with admin client.`
         );
         signInRes = await supabaseAdmin.auth.signInWithPassword({
           email: normalizedEmail,
@@ -259,146 +178,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // #region debug-point E:after-supabase-auth
-      (() => { try {
-        const fs = require('fs'),
-          p = '.dbg/login-not-working.env';
-        let u = 'http://127.0.0.1:7777/event',
-          s = 'login-not-working';
-        try {
-          const e = fs.readFileSync(p, 'utf8');
-          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-        } catch {}
-        fetch(u, {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: s,
-            runId: 'pre-fix',
-            hypothesisId: 'E',
-            location: 'api/auth/login.ts:after-supabase-auth',
-            msg: '[DEBUG] Supabase Auth signInWithPassword result',
-            data: {
-              hasError: !!signInRes.error,
-              errorCode: (signInRes.error as any)?.code || null,
-              errorMessage: (signInRes.error as any)?.message || null,
-              hasUser: !!signInRes.data?.user,
-              userId: signInRes.data?.user?.id || null,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
+      if (signInRes.error) {
+        const sbCode: string = (signInRes.error as any)?.code ?? '';
+        const sbMessage: string = signInRes.error.message ?? '';
+        const sbStatus: number | undefined = (signInRes.error as any)?.status as any;
         console.error(
-          '[DEBUG-LNW-E] auth-signin err=%s code=%s userFound=%s',
-          signInRes.error ? 'YES' : 'no',
-          (signInRes.error as any)?.code || '-',
-          signInRes.data?.user ? 'yes' : 'no'
-        );
-      } catch {} })();
-      // #endregion
-
-      if (!signInRes.error && signInRes.data && signInRes.data.user) {
-        const supabaseUserId = signInRes.data.user.id;
-        const supabaseEmail = signInRes.data.user.email || normalizedEmail;
-        const meta: any = signInRes.data.user.user_metadata || {};
-        const displayName = meta.full_name || meta.name || meta.display_name || null;
-
-        try {
-          const { data: existing, error: lookupError } = await supabaseAdmin
-            .from('users')
-            .select('id, email, full_name, is_active')
-            .eq('id', supabaseUserId)
-            .limit(1);
-
-          if (!lookupError && existing && existing.length > 0) {
-            const existingRow = existing[0];
-            if (existingRow.is_active === false) {
-              return res.status(403).json({ error: 'Account is disabled. Contact administrator.' });
-            }
-            resolvedUser = {
-              id: existingRow.id,
-              email: existingRow.email,
-              fullName: existingRow.full_name || displayName,
-            };
-          } else {
-            try {
-              await supabaseAdmin.from('users').insert([{
-                id: supabaseUserId,
-                email: supabaseEmail,
-                password_hash: '',
-                full_name: displayName,
-                is_active: true,
-              }]);
-            } catch (insertErr) {
-              console.error('Warning: could not mirror user to public.users:', insertErr);
-            }
-            resolvedUser = {
-              id: supabaseUserId,
-              email: supabaseEmail,
-              fullName: displayName,
-            };
-          }
-        } catch (mirrorErr) {
-          console.error('Mirror step failed, proceeding with auth user:', mirrorErr);
-          resolvedUser = {
-            id: supabaseUserId,
-            email: supabaseEmail,
-            fullName: displayName,
-          };
-        }
-      } else {
-        const signInErrCode: string = (signInRes.error as any)?.code || '';
-        const signInErrMsg: string = (signInRes.error as any)?.message || '';
-        console.error(
-          `Login: Supabase Auth signInWithPassword failed for ${normalizedEmail} — code=${signInErrCode} message=${signInErrMsg}`
+          `[LOGIN][Supabase Auth signInWithPassword FAILED] email=${normalizedEmail} code=${JSON.stringify(
+            sbCode
+          )} status=${JSON.stringify(sbStatus)} message=${JSON.stringify(sbMessage)}`
         );
 
-        if (
-          signInErrCode === 'email_not_confirmed' ||
-          /email not confirmed/i.test(signInErrMsg)
-        ) {
-          // #region debug-point F:email-not-confirmed-branch
-          (() => { try {
-            const fs = require('fs'),
-              p = '.dbg/login-not-working.env';
-            let u = 'http://127.0.0.1:7777/event',
-              s = 'login-not-working';
-            try {
-              const e = fs.readFileSync(p, 'utf8');
-              u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-              s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-            } catch {}
-            fetch(u, {
-              method: 'POST',
-              body: JSON.stringify({
-                sessionId: s,
-                runId: 'pre-fix',
-                hypothesisId: 'E',
-                location: 'api/auth/login.ts:email-not-confirmed',
-                msg: '[DEBUG] Entering email_not_confirmed auto-confirm branch',
-                data: {},
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            console.error('[DEBUG-LNW-F] entering email-not-confirmed auto-confirm path');
-          } catch {} })();
-          // #endregion
-
+        if (sbCode === 'email_not_confirmed' || /email not confirmed/i.test(sbMessage)) {
           console.log(
-            `Login: email not confirmed for ${normalizedEmail}; attempting admin auto-confirm.`
+            `[LOGIN] email_not_confirmed detected for ${normalizedEmail}. Attempting admin auto-confirm (requires SERVICE_ROLE_KEY).`
           );
           try {
-            const list = await supabaseAdmin.auth.admin.listUsers({
-              perPage: 1000,
-            });
-            const match = list?.users?.find(
+            const list = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+            const userList: any[] =
+              (list as any)?.data?.users || (list as any)?.users || [];
+            const match = userList.find(
               (u: any) => (u.email || '').toLowerCase() === normalizedEmail
             );
             if (match) {
               const updated = await supabaseAdmin.auth.admin.updateUserById(match.id, {
-                email_confirm: true,
+                emailConfirm: true,
               });
               if (updated.user) {
+                console.log(
+                  `[LOGIN] Auto-confirmed email for user id=${match.id}. Retrying signInWithPassword.`
+                );
                 let retry = await supabaseAuth.auth.signInWithPassword({
                   email: normalizedEmail,
                   password,
@@ -422,158 +230,139 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       .eq('id', userId)
                       .limit(1);
                     if (!existing || existing.length === 0) {
-                      await supabaseAdmin.from('users').insert([{
-                        id: userId,
-                        email: userEmail,
-                        password_hash: '',
-                        full_name: dName,
-                        is_active: true,
-                      }]);
+                      await supabaseAdmin.from('users').insert([
+                        {
+                          id: userId,
+                          email: userEmail,
+                          password_hash: '',
+                          full_name: dName,
+                          is_active: true,
+                        },
+                      ]);
                     }
                   } catch {
-                    /* ignore */
+                    /* ignore mirror step failure */
                   }
                 } else {
+                  const rCode = (retry.error as any)?.code ?? '';
+                  const rMsg = retry.error?.message ?? '';
                   console.error(
-                    `Login: retry sign-in after auto-confirm still failed for ${normalizedEmail}`
+                    `[LOGIN] After auto-confirm retry, signIn still failed for ${normalizedEmail}. code=${JSON.stringify(
+                      rCode
+                    )} message=${JSON.stringify(rMsg)}`
                   );
                 }
               } else {
                 console.error(
-                  `Login: admin updateUserById did not return user for ${normalizedEmail}`
+                  `[LOGIN] supabaseAdmin.auth.admin.updateUserById returned no user for ${normalizedEmail}.`
                 );
               }
             } else {
               console.log(
-                `Login: admin listUsers did not find ${normalizedEmail} in auth.users`
+                `[LOGIN] admin.listUsers did not find ${normalizedEmail} in auth.users table (only in public.users? check dashboards).`
               );
             }
           } catch (adminErr) {
-            console.error('Admin email-confirm recovery failed:', adminErr);
+            console.error(
+              `[LOGIN] Admin auto-confirm recovery threw for ${normalizedEmail}:`,
+              adminErr instanceof Error ? `${adminErr.name}: ${adminErr.message}` : String(adminErr)
+            );
           }
         }
 
         if (!resolvedUser) {
-          // #region debug-point G:401-signin-fail
-          (() => { try {
-            const fs = require('fs'),
-              p = '.dbg/login-not-working.env';
-            let u = 'http://127.0.0.1:7777/event',
-              s = 'login-not-working';
-            try {
-              const e = fs.readFileSync(p, 'utf8');
-              u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-              s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-            } catch {}
-            fetch(u, {
-              method: 'POST',
-              body: JSON.stringify({
-                sessionId: s,
-                runId: 'pre-fix',
-                hypothesisId: 'G',
-                location: 'api/auth/login.ts:401-signin-failed',
-                msg: '[DEBUG] 401 being returned after Supabase Auth failed',
-                data: { diagCode: 'L401-AUTHFAIL', errCode: signInErrCode, errMsg: signInErrMsg },
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            console.error(
-              '[DEBUG-LNW-G] 401 diagCode=L401-AUTHFAIL err=%s msg=%s',
-              signInErrCode,
-              signInErrMsg
-            );
-          } catch {} })();
-          // #endregion
-          const msg = signInErrMsg || 'Invalid email or password';
           return res.status(401).json({
-            error: msg,
-            diagnostic_code: 'L401-AUTHFAIL',
+            error: sbMessage || 'Invalid email or password.',
+            diagnostic_code: 'L401-SUPABASE-AUTH',
+            supabase: {
+              code: sbCode || null,
+              status: sbStatus || null,
+            },
           });
+        }
+      }
+
+      if (!resolvedUser && signInRes.data && signInRes.data.user) {
+        const supabaseUserId = signInRes.data.user.id;
+        const supabaseEmail = signInRes.data.user.email || normalizedEmail;
+        const meta: any = signInRes.data.user.user_metadata || {};
+        const displayName = meta.full_name || meta.name || meta.display_name || null;
+
+        try {
+          const { data: existing, error: lookupError } = await supabaseAdmin
+            .from('users')
+            .select('id, email, full_name, is_active')
+            .eq('id', supabaseUserId)
+            .limit(1);
+
+          if (!lookupError && existing && existing.length > 0) {
+            const existingRow = existing[0];
+            if (existingRow.is_active === false) {
+              return res
+                .status(403)
+                .json({ error: 'Account is disabled. Contact administrator.' });
+            }
+            resolvedUser = {
+              id: existingRow.id,
+              email: existingRow.email,
+              fullName: existingRow.full_name || displayName,
+            };
+          } else {
+            try {
+              await supabaseAdmin.from('users').insert([
+                {
+                  id: supabaseUserId,
+                  email: supabaseEmail,
+                  password_hash: '',
+                  full_name: displayName,
+                  is_active: true,
+                },
+              ]);
+            } catch (insertErr) {
+              console.error(
+                '[LOGIN][WARN] Could not mirror auth user into public.users:',
+                insertErr instanceof Error ? `${insertErr.name}: ${insertErr.message}` : String(insertErr)
+              );
+            }
+            resolvedUser = {
+              id: supabaseUserId,
+              email: supabaseEmail,
+              fullName: displayName,
+            };
+          }
+        } catch (mirrorErr) {
+          console.error(
+            '[LOGIN][WARN] Mirror step failed, proceeding with raw auth user:',
+            mirrorErr instanceof Error ? `${mirrorErr.name}: ${mirrorErr.message}` : String(mirrorErr)
+          );
+          resolvedUser = {
+            id: supabaseUserId,
+            email: supabaseEmail,
+            fullName: displayName,
+          };
         }
       }
     }
 
     if (!resolvedUser) {
-      // #region debug-point H:401-final-gate
-      (() => { try {
-        const fs = require('fs'),
-          p = '.dbg/login-not-working.env';
-        let u = 'http://127.0.0.1:7777/event',
-          s = 'login-not-working';
-        try {
-          const e = fs.readFileSync(p, 'utf8');
-          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-        } catch {}
-        fetch(u, {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: s,
-            runId: 'pre-fix',
-            hypothesisId: 'H',
-            location: 'api/auth/login.ts:401-final-gate',
-            msg: '[DEBUG] 401 at final gate - unresolved user',
-            data: { diagCode: 'L401-NOUSER' },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        console.error('[DEBUG-LNW-H] 401 diagCode=L401-NOUSER final gate unresolved');
-      } catch {} })();
-      // #endregion
       console.error(
-        `Login: unresolved user at final gate for ${normalizedEmail} — returning 401.`
+        `[LOGIN] Unresolved user at final gate for ${normalizedEmail} -> 401.`
       );
       return res.status(401).json({
-        error: 'Invalid email or password',
-        diagnostic_code: 'L401-NOUSER',
+        error: 'Invalid email or password.',
+        diagnostic_code: 'L401-NO-RESOLVED-USER',
       });
     }
 
     const token = signToken({ userId: resolvedUser.id, email: resolvedUser.email });
 
-    const cookieOptions = [
-      `HttpOnly`,
-      `SameSite=Lax`,
-      `Path=/`,
-      `Max-Age=${60 * 60 * 24 * 7}`,
-    ];
+    const cookieOptions = [`HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=${60 * 60 * 24 * 7}`];
     if (process.env.NODE_ENV === 'production') {
       cookieOptions.push('Secure');
     }
     res.setHeader('Set-Cookie', `auth_token=${token}; ${cookieOptions.join('; ')}`);
 
-    // #region debug-point I:success
-    (() => { try {
-      const fs = require('fs'),
-        p = '.dbg/login-not-working.env';
-      let u = 'http://127.0.0.1:7777/event',
-        s = 'login-not-working';
-      try {
-        const e = fs.readFileSync(p, 'utf8');
-        u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-        s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-      } catch {}
-      fetch(u, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: s,
-          runId: 'pre-fix',
-          hypothesisId: 'I',
-          location: 'api/auth/login.ts:success-200',
-          msg: '[DEBUG] Login success 200',
-          data: { userId: resolvedUser.id, email: resolvedUser.email },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      console.error(
-        '[DEBUG-LNW-I] SUCCESS 200 user=%s id=%s',
-        resolvedUser.email,
-        resolvedUser.id
-      );
-    } catch {} })();
-    // #endregion
-
-    console.log(`Login: success for ${normalizedEmail} (id=${resolvedUser.id})`);
+    console.log(`[LOGIN] SUCCESS for ${normalizedEmail} (id=${resolvedUser.id})`);
     return res.status(200).json({
       token,
       user: {
@@ -583,37 +372,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
   } catch (error) {
-    // #region debug-point J:unexpected-error
-    (() => { try {
-      const fs = require('fs'),
-        p = '.dbg/login-not-working.env';
-      let u = 'http://127.0.0.1:7777/event',
-        s = 'login-not-working';
-      try {
-        const e = fs.readFileSync(p, 'utf8');
-        u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1] || u;
-        s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1] || s;
-      } catch {}
-      const errMsg = error instanceof Error ? error.message : String(error || '');
-      fetch(u, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: s,
-          runId: 'pre-fix',
-          hypothesisId: 'H',
-          location: 'api/auth/login.ts:500-catch',
-          msg: '[DEBUG] 500 unexpected error',
-          data: { diagCode: 'L500-CATCH', errMsg },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      console.error('[DEBUG-LNW-J] 500 diagCode=L500-CATCH msg=%s', errMsg);
-    } catch {} })();
-    // #endregion
-    console.error('Login unexpected error:', error);
+    const errMsg =
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error || '');
+    console.error(`[LOGIN][500] Unexpected handler error for email=${(req.body as any)?.email ?? '<unknown>'}:`, errMsg);
     return res.status(500).json({
-      error: 'Internal server error',
-      diagnostic_code: 'L500-CATCH',
+      error: 'Internal server error.',
+      diagnostic_code: 'L500-CATCH-ALL',
     });
   }
 }

@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600">
-  <rect width="1200" height="600" fill="#f8c644"/>
-  <path fill="#212936" d="M150 150 L300 150 L250 450 L100 450 Z"/>
-  <ellipse cx="550" cy="300" rx="200" ry="180" fill="#212936"/>
-  <path fill="#212936" d="M800 150 Q1000 150 1000 300 Q1000 450 800 450 L750 450 L750 150 Z"/>
-  <text x="1050" y="450" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#212936" transform="rotate(-90, 1050, 300)">GROUP</text>
-</svg>
