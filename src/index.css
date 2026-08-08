@@ -82,11 +82,10 @@ body {
 
 .header-logo {
   flex: 1;
-  max-width: 320px;
+  max-width: 220px;
   height: auto;
   display: block;
   margin: 0 auto;
-  filter: brightness(0) invert(1);
 }
 
 .header-content h1 {

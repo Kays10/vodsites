@@ -1,43 +1,56 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
-import jwt from 'jsonwebtoken';
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { VercelRequest } from '@vercel/node';
 
 export interface JwtPayload {
   userId: string;
   email: string;
+  iat?: number;
+  exp?: number;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production-please-set-env-var';
-const SALT_ROUNDS = 16;
-const TOKEN_EXPIRES_IN = '7d';
-
-export function hashPassword(password: string): string {
-  const salt = randomBytes(SALT_ROUNDS).toString('hex');
-  const derivedKey = scryptSync(password, salt, 64) as Buffer;
-  return `${salt}:${derivedKey.toString('hex')}`;
+function readEnv(key: string): string {
+  const v = process.env[key];
+  return typeof v === 'string' ? v : '';
 }
 
-export function verifyPassword(password: string, storedHash: string): boolean {
-  try {
-    const [salt, key] = storedHash.split(':');
-    if (!salt || !key) return false;
-    const derivedKey = scryptSync(password, salt, 64) as Buffer;
-    const keyBuffer = Buffer.from(key, 'hex');
-    if (derivedKey.length !== keyBuffer.length) return false;
-    return timingSafeEqual(derivedKey, keyBuffer);
-  } catch {
-    return false;
-  }
+const JWT_SECRET = readEnv('JWT_SECRET') || 'change-me-in-production-please-set-env-var';
+
+function base64UrlDecode(input: string): Buffer {
+  let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4 !== 0) base64 += '=';
+  return Buffer.from(base64, 'base64');
 }
 
-export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
+function base64UrlEncode(buf: Buffer | string): string {
+  const b = typeof buf === 'string' ? Buffer.from(buf, 'utf8') : buf;
+  return b
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
 export function verifyToken(token: string): JwtPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
-    return decoded;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerB64, claimsB64, signatureB64] = parts;
+    const signingInput = `${headerB64}.${claimsB64}`;
+
+    const expectedSignature = createHmac('sha256', JWT_SECRET).update(signingInput).digest();
+    const providedSignature = base64UrlDecode(signatureB64);
+
+    if (expectedSignature.length !== providedSignature.length) return null;
+    if (!timingSafeEqual(expectedSignature, providedSignature)) return null;
+
+    const claims = JSON.parse(base64UrlDecode(claimsB64).toString('utf8')) as JwtPayload;
+    if (claims.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now > claims.exp) return null;
+    }
+    if (!claims.userId || !claims.email) return null;
+    return claims;
   } catch {
     return null;
   }
