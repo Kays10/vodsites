@@ -269,7 +269,6 @@ function App() {
         <div className="login-card">
           <div className="login-header">
             <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
-            <h1>VOD GROUP</h1>
             <p className="login-subtitle">Loading...</p>
           </div>
         </div>

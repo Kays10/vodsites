@@ -70,30 +70,11 @@ body {
   gap: 16px;
 }
 
-.header-spacer {
-  flex: 1;
-  min-width: 0;
-}
-
-.header-content h1 {
-  flex: 1;
-  text-align: center;
-}
-
 .header-logo {
-  flex: 1;
-  max-width: 220px;
+  max-width: 200px;
   height: auto;
   display: block;
-  margin: 0 auto;
   filter: brightness(0) invert(1);
-}
-
-.header-content h1 {
-  font-size: 2.75rem;
-  font-weight: 800;
-  color: white;
-  margin: 0;
 }
 
 .search-bar {
@@ -567,7 +548,7 @@ body {
   width: 220px;
   max-width: 100%;
   height: auto;
-  margin: 0 auto 20px;
+  margin: 0 auto 16px;
   display: block;
 }
 
@@ -585,14 +566,6 @@ body {
   font-weight: 800;
   letter-spacing: 0.05em;
   box-shadow: 0 8px 24px rgba(17, 24, 39, 0.25);
-}
-
-.login-header h1 {
-  font-size: 2rem;
-  font-weight: 800;
-  color: #1f2937;
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
 }
 
 .login-subtitle {

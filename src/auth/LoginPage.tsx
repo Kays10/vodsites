@@ -36,10 +36,9 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-card" role="main" aria-labelledby="login-title">
+      <div className="login-card" role="main" aria-label="VOD GROUP Sign In">
         <div className="login-header">
           <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
-          <h1 id="login-title">VOD GROUP</h1>
           <p className="login-subtitle">Sign in to access your sites</p>
         </div>
 
