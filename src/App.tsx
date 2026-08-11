@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
 import { useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
+import SetPasswordPage from './auth/SetPasswordPage';
+import ResetPasswordPage from './auth/ResetPasswordPage';
 
 const API_BASE = '/api';
 const SAVE_PASSWORD = '2wsx@WSX123';
@@ -54,7 +56,7 @@ function PasswordPrompt({ onConfirm, onCancel }: { onConfirm: () => void; onCanc
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
-  const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, token, user, logout, needsPassword, recoveryToken } = useAuth();
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -257,8 +259,13 @@ function App() {
     );
   }
 
+  // Password reset link clicked — show reset form regardless of auth state
+  if (recoveryToken) return <ResetPasswordPage recoveryToken={recoveryToken} />;
+
   if (!isAuthenticated) return <LoginPage />;
 
+  // New user — must set a password before accessing the app
+  if (needsPassword) return <SetPasswordPage />;
   // ─── Render: main app ──────────────────────────────────────────────────────
   return (
     <div className="container">
