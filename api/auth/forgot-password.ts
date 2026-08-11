@@ -38,14 +38,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Use anon key for resetPasswordForEmail — this is the correct Supabase method
-    // that actually sends the password reset email
-    const supabase = createClient(supabaseUrl, anonKey || serviceKey, {
+    const appUrl = 'https://vod-ss-ites.vercel.app';
+    const redirectTo = `${appUrl}/`;
+
+    // Use anon key for resetPasswordForEmail — this sends the actual email
+    // Fall back to service key if anon key not configured
+    const clientKey = anonKey || serviceKey;
+    const supabase = createClient(supabaseUrl, clientKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://vod-ss-ites.vercel.app',
+      redirectTo,
     });
 
     if (error) {
@@ -53,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Still return success to avoid user enumeration
     }
 
-    // Always return success — don't reveal whether email exists
+    // Always return success regardless — don't reveal whether email exists
     return res.status(200).json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

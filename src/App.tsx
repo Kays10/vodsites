@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
 import { useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
+import SetPasswordPage from './auth/SetPasswordPage';
 
 const API_BASE = '/api';
 const SAVE_PASSWORD = '2wsx@WSX123';
@@ -54,7 +55,7 @@ function PasswordPrompt({ onConfirm, onCancel }: { onConfirm: () => void; onCanc
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
-  const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, token, user, logout, needsPassword } = useAuth();
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -249,7 +250,7 @@ function App() {
       <div className="login-page">
         <div className="login-card">
           <div className="login-header">
-            <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
+            <img src="/logo.svg" alt="VOD Group" className="login-logo-img" />
             <p className="login-subtitle">Loading...</p>
           </div>
         </div>
@@ -259,13 +260,15 @@ function App() {
 
   if (!isAuthenticated) return <LoginPage />;
 
+  if (needsPassword) return <SetPasswordPage />;
+
   // ─── Render: main app ──────────────────────────────────────────────────────
   return (
     <div className="container">
       {/* Header */}
       <div className="header">
         <div className="header-content">
-          <img src="/logo.svg" alt="VOD GROUP" className="header-logo" />
+          <img src="/logo.svg" alt="VOD Group" className="header-logo" />
           <div className="header-user">
             <span className="user-email" title={user?.email ?? ''}>
               {user?.fullName || user?.email || 'User'}
