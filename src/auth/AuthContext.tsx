@@ -4,12 +4,14 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { AuthUser } from '../types';
 
 const TOKEN_KEY = 'vod_auth_token';
 const USER_KEY = 'vod_auth_user';
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -26,6 +28,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const logoutRef = useRef<() => Promise<void>>();
+
+  // Auto-logout after 30 minutes of inactivity
+  useEffect(() => {
+    if (!token) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        logoutRef.current?.();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [token]);
 
   useEffect(() => {
     try {
@@ -101,6 +127,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, []);
+
+  // Keep logoutRef in sync so the inactivity timer always calls the latest logout
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
 
   const value: AuthContextValue = {
     user,
