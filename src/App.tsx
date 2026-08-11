@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
 import { useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
-import SetPasswordPage from './auth/SetPasswordPage';
 
 const API_BASE = '/api';
 const SAVE_PASSWORD = '2wsx@WSX123';
@@ -55,7 +54,7 @@ function PasswordPrompt({ onConfirm, onCancel }: { onConfirm: () => void; onCanc
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
-  const { isAuthenticated, isLoading: authLoading, token, user, logout, needsPassword, loginWithMagicToken } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,23 +79,6 @@ function App() {
   );
 
   const handleLogout = useCallback(async () => { await logout(); }, [logout]);
-
-  // Handle magic link callback — Supabase redirects to /#access_token=...&type=magiclink
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash) return;
-    const params = new URLSearchParams(hash.replace(/^#/, ''));
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token') || '';
-    const type = params.get('type'); // 'magiclink' or 'recovery'
-    if (accessToken && (type === 'magiclink' || type === 'recovery')) {
-      // Clear the hash so tokens don't stay in the URL
-      window.history.replaceState(null, '', window.location.pathname);
-      loginWithMagicToken(accessToken, refreshToken).catch(err => {
-        console.error('Magic link verification failed:', err);
-      });
-    }
-  }, [loginWithMagicToken]);
 
   useEffect(() => {
     if (isAuthenticated) void fetchSites();
@@ -276,8 +258,6 @@ function App() {
   }
 
   if (!isAuthenticated) return <LoginPage />;
-
-  if (needsPassword) return <SetPasswordPage />;
 
   // ─── Render: main app ──────────────────────────────────────────────────────
   return (
