@@ -133,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let resolvedUser: { id: string; email: string; fullName: string | null } | null = null;
     let lastSbCode: string | null = null;
     let lastSbMsg: string | null = null;
+    let needsPassword = false; // true for users who haven't set a password yet
 
     // ========================================================================
     // STEP 1 — Supabase Auth signInWithPassword (first priority)
@@ -151,6 +152,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           email: u.email || normalizedEmail,
           fullName: displayName,
         };
+
+        // Check if this user has set a password yet (marked via has_password metadata)
+        // New users added via Supabase dashboard won't have this flag
+        const hasPassword = meta.has_password === true;
+        if (!hasPassword) needsPassword = true;
+
         // (Non-fatal mirror to public.users)
         try {
           const usersTable = supabaseAdmin.from('users' as any);
@@ -308,6 +315,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       token,
+      needsPassword,
       user: {
         id: resolvedUser.id,
         email: resolvedUser.email,

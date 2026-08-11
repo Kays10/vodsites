@@ -1,13 +1,20 @@
 import { useState, FormEvent } from 'react';
 import { useAuth } from './AuthContext';
 
-export default function ResetPasswordPage({ recoveryToken }: { recoveryToken: string }) {
-  const { resetPassword } = useAuth();
+export default function ResetPasswordPage() {
+  const { resetPassword, clearPending, pendingType } = useAuth();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+
+  const isInvite = pendingType === 'invite';
+  const title = isInvite ? 'Set your password' : 'Reset your password';
+  const intro = isInvite
+    ? 'Welcome! Create a password for your account. You\'ll use it every time you sign in.'
+    : 'Enter a new password for your account.';
+  const btnLabel = isInvite ? 'Set Password & Continue' : 'Set New Password';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,10 +29,10 @@ export default function ResetPasswordPage({ recoveryToken }: { recoveryToken: st
     }
     setLoading(true);
     try {
-      await resetPassword(recoveryToken, password);
+      await resetPassword(password);
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset password. Please try again.');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -33,45 +40,62 @@ export default function ResetPasswordPage({ recoveryToken }: { recoveryToken: st
 
   return (
     <div className="login-page">
-      <div className="login-card" role="main" aria-label="Reset your password">
+      <div className="login-card" role="main">
         <div className="login-header">
           <img src="/logo.svg" alt="VOD GROUP" className="login-logo-img" />
-          <p className="login-subtitle">Reset your password</p>
+          <p className="login-subtitle">{title}</p>
         </div>
 
         {done ? (
           <div className="login-form">
             <div className="login-alert login-alert-success" role="status">
-              Password updated. You can now sign in with your new password.
+              {isInvite
+                ? 'Password set. You can now sign in.'
+                : 'Password updated. You can now sign in with your new password.'}
             </div>
-            <a href="/" className="btn btn-primary btn-login" style={{ display: 'block', textAlign: 'center', marginTop: 8 }}>
+            <button
+              className="btn btn-primary btn-login"
+              style={{ marginTop: 12 }}
+              onClick={clearPending}
+            >
               Go to Sign In
-            </a>
+            </button>
           </div>
         ) : (
           <form className="login-form" onSubmit={handleSubmit} noValidate>
-            <p style={{ margin: '0 0 16px', fontSize: '0.875rem', color: '#6b7280' }}>
-              Enter a new password for your account.
-            </p>
+            <p style={{ margin: '0 0 16px', fontSize: '0.875rem', color: '#6b7280' }}>{intro}</p>
+
             {error && <div className="login-alert" role="alert">{error}</div>}
+
             <div className="form-group">
-              <label htmlFor="reset-password">New Password</label>
+              <label htmlFor="rp-password">New Password</label>
               <input
-                id="reset-password" type="password" autoComplete="new-password"
-                value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="At least 8 characters" required autoFocus
+                id="rp-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                required
+                autoFocus
               />
             </div>
+
             <div className="form-group">
-              <label htmlFor="reset-confirm">Confirm Password</label>
+              <label htmlFor="rp-confirm">Confirm Password</label>
               <input
-                id="reset-confirm" type="password" autoComplete="new-password"
-                value={confirm} onChange={e => setConfirm(e.target.value)}
-                placeholder="Repeat your password" required
+                id="rp-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                placeholder="Repeat your password"
+                required
               />
             </div>
+
             <button type="submit" className="btn btn-primary btn-login" disabled={loading}>
-              {loading ? 'Saving...' : 'Set New Password'}
+              {loading ? 'Saving...' : btnLabel}
             </button>
           </form>
         )}

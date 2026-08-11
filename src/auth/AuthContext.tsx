@@ -18,11 +18,12 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  needsPassword: boolean;       // new user — must set a password before continuing
-  recoveryToken: string | null; // password reset email was clicked — show reset form
+  // set when user arrives via invite or recovery email link
+  pendingToken: string | null;
+  pendingType: 'invite' | 'recovery' | null;
   login: (email: string, password: string) => Promise<void>;
-  setPassword: (password: string) => Promise<void>;
-  resetPassword: (supabaseAccessToken: string, newPassword: string) => Promise<void>;
+  resetPassword: (newPassword: string) => Promise<void>;
+  clearPending: () => void;
   logout: () => Promise<void>;
 }
 
@@ -32,24 +33,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [needsPassword, setNeedsPassword] = useState(false);
-  const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [pendingType, setPendingType] = useState<'invite' | 'recovery' | null>(null);
   const logoutRef = useRef<() => Promise<void>>();
 
-  // On mount: check for Supabase recovery hash first, then restore session
   useEffect(() => {
+    // Check URL hash for Supabase email link callbacks
+    // Supabase appends: #access_token=...&type=recovery (or invite)
     try {
       const hash = window.location.hash;
       if (hash) {
         const params = new URLSearchParams(hash.replace(/^#/, ''));
-        const accessToken = params.get('access_token');
+        const sbToken = params.get('access_token');
         const type = params.get('type');
-        if (accessToken && type === 'recovery') {
-          // Clear the hash so the token isn't visible in the URL
+        if (sbToken && (type === 'recovery' || type === 'invite')) {
+          // Remove hash from URL so token isn't visible/bookmarkable
           window.history.replaceState(null, '', window.location.pathname);
-          setRecoveryToken(accessToken);
+          setPendingToken(sbToken);
+          setPendingType(type as 'invite' | 'recovery');
           setIsLoading(false);
-          return; // Skip restoring old session — just show the reset form
+          return; // Don't restore old session — show password form
         }
       }
     } catch { /* ignore */ }
@@ -59,11 +62,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedToken = localStorage.getItem(TOKEN_KEY);
       const storedUser = localStorage.getItem(USER_KEY);
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const parts = storedToken.split('.');
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+        }
       }
-    } catch (err) {
-      console.error('Failed to restore auth session:', err);
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
     } finally {
       setIsLoading(false);
     }
@@ -91,23 +101,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setToken(data.token);
     setUser(data.user);
-    setNeedsPassword(data.needsPassword === true);
     try {
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     } catch { /* ignore */ }
   }, []);
 
-  // New user setting their password for the first time
-  const setPassword = useCallback(async (password: string) => {
-    const storedToken = localStorage.getItem(TOKEN_KEY) || token || '';
-    const res = await fetch('/api/auth/set-password', {
+  // Called from ResetPasswordPage — uses the Supabase token from the email link
+  const resetPassword = useCallback(async (newPassword: string) => {
+    if (!pendingToken) throw new Error('No reset token found. Please use the link from your email.');
+    const res = await fetch('/api/auth/reset-password', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${storedToken}`,
-      },
-      body: JSON.stringify({ password }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: pendingToken, password: newPassword }),
     });
     let data: any = {};
     try { data = await res.json(); } catch {}
@@ -118,34 +124,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : 'Failed to set password. Please try again.'
       );
     }
-    setNeedsPassword(false);
-  }, [token]);
+    // Done — clear the pending state so app shows login page
+    setPendingToken(null);
+    setPendingType(null);
+  }, [pendingToken]);
 
-  // User arrived via forgot-password email link
-  const resetPassword = useCallback(async (supabaseAccessToken: string, newPassword: string) => {
-    const res = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: supabaseAccessToken, password: newPassword }),
-    });
-    let data: any = {};
-    try { data = await res.json(); } catch {}
-    if (!res.ok) {
-      throw new Error(
-        typeof data?.error === 'string' && data.error.trim()
-          ? data.error
-          : 'Failed to reset password. Please try again.'
-      );
-    }
-    setRecoveryToken(null); // Return to login page after successful reset
+  const clearPending = useCallback(() => {
+    setPendingToken(null);
+    setPendingType(null);
   }, []);
 
   const logout = useCallback(async () => {
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     setToken(null);
     setUser(null);
-    setNeedsPassword(false);
-    setRecoveryToken(null);
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -176,11 +168,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, token,
       isAuthenticated: !!token,
       isLoading,
-      needsPassword,
-      recoveryToken,
+      pendingToken,
+      pendingType,
       login,
-      setPassword,
       resetPassword,
+      clearPending,
       logout,
     }}>
       {children}
