@@ -126,6 +126,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return jsonError(res, 400, 'A valid email address is required.', 'L400-EMAIL-FMT');
     }
+    if (!normalizedEmail.endsWith('@vodgroup.co.za')) {
+      return jsonError(res, 403, 'Access restricted to @vodgroup.co.za accounts only.', 'L403-DOMAIN');
+    }
 
     let resolvedUser: { id: string; email: string; fullName: string | null } | null = null;
     let lastSbCode: string | null = null;
