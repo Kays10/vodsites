@@ -18,7 +18,10 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  needsPassword: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithMagicToken: (accessToken: string, refreshToken: string) => Promise<void>;
+  setPassword: (password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -28,7 +31,127 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsPassword, setNeedsPassword] = useState(false);
   const logoutRef = useRef<() => Promise<void>>();
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const storedToken = localStorage.getItem(TOKEN_KEY);
+      const storedUser = localStorage.getItem(USER_KEY);
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (err) {
+      console.error('Failed to restore auth session:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    let data: any = {};
+    try { data = await res.json(); } catch {}
+
+    if (!res.ok) {
+      throw new Error(
+        typeof data?.error === 'string' && data.error.trim()
+          ? data.error
+          : `Login failed (HTTP ${res.status})`
+      );
+    }
+    if (!data?.token || !data?.user) {
+      throw new Error('Login failed: invalid response from server');
+    }
+
+    setToken(data.token);
+    setUser(data.user);
+    setNeedsPassword(false);
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    } catch { /* ignore */ }
+  }, []);
+
+  // Called after magic link callback — exchanges Supabase token for our app JWT
+  const loginWithMagicToken = useCallback(async (accessToken: string, refreshToken: string) => {
+    const res = await fetch('/api/auth/verify-magic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+    });
+
+    let data: any = {};
+    try { data = await res.json(); } catch {}
+
+    if (!res.ok) {
+      throw new Error(
+        typeof data?.error === 'string' && data.error.trim()
+          ? data.error
+          : `Magic link verification failed (HTTP ${res.status})`
+      );
+    }
+    if (!data?.token || !data?.user) {
+      throw new Error('Magic link verification failed: invalid response');
+    }
+
+    setToken(data.token);
+    setUser(data.user);
+    setNeedsPassword(data.needsPassword === true);
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    } catch { /* ignore */ }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    setToken(null);
+    setUser(null);
+    setNeedsPassword(false);
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Keep logoutRef in sync so the inactivity timer always calls the latest logout
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
+
+  // Set password after first magic link login
+  const setPassword = useCallback(async (password: string) => {
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    const res = await fetch('/api/auth/set-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${storedToken || token || ''}`,
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    let data: any = {};
+    try { data = await res.json(); } catch {}
+
+    if (!res.ok) {
+      throw new Error(
+        typeof data?.error === 'string' && data.error.trim()
+          ? data.error
+          : 'Failed to set password. Please try again.'
+      );
+    }
+
+    setNeedsPassword(false);
+  }, [token]);
 
   // Auto-logout after 30 minutes of inactivity
   useEffect(() => {
@@ -53,90 +176,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [token]);
 
-  useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem(TOKEN_KEY);
-      const storedUser = localStorage.getItem(USER_KEY);
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      }
-    } catch (err) {
-      console.error('Failed to restore auth session:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const login = useCallback(async (email: string, password: string) => {
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      let data: any = {};
-      if (contentType.includes('application/json')) {
-        data = await res.json().catch(() => ({}));
-      } else {
-        try { data = await res.json().catch(() => ({})); } catch {}
-      }
-
-      if (!res.ok) {
-        const message =
-          (typeof data?.error === 'string' && data.error.trim()) ||
-          `Login failed (HTTP ${res.status})`;
-        throw new Error(message);
-      }
-
-      if (!data || !data.token || !data.user) {
-        throw new Error('Login failed: invalid response from server');
-      }
-
-      setToken(data.token);
-      setUser(data.user);
-      try {
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-      } catch {
-        /* ignore persistence errors */
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : 'Login failed. Please try again.';
-      throw new Error(message);
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {
-      /* ignore network errors on logout */
-    }
-    setToken(null);
-    setUser(null);
-    try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  // Keep logoutRef in sync so the inactivity timer always calls the latest logout
-  useEffect(() => { logoutRef.current = logout; }, [logout]);
-
   const value: AuthContextValue = {
     user,
     token,
     isAuthenticated: !!token,
     isLoading,
+    needsPassword,
     login,
+    loginWithMagicToken,
+    setPassword,
     logout,
   };
 
@@ -145,8 +193,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used inside an AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used inside an AuthProvider');
   return ctx;
 }

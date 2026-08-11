@@ -863,3 +863,64 @@ body {
     display: none;
   }
 }
+
+/* ── Login tabs ──────────────────────────────────────────────────────────── */
+.login-tabs {
+  display: flex;
+  border-bottom: 2px solid #e5e7eb;
+  margin: 0 0 20px;
+}
+
+.login-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.login-tab:hover {
+  color: #111827;
+}
+
+.login-tab.active {
+  color: #111827;
+  border-bottom-color: #111827;
+  font-weight: 600;
+}
+
+/* ── Forgot password / back link button ─────────────────────────────────── */
+.login-link-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  padding: 8px 0 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+
+.login-link-btn:hover {
+  color: #111827;
+}
+
+/* ── Success alert variant ───────────────────────────────────────────────── */
+.login-alert-success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
