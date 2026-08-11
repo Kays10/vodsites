@@ -18,11 +18,7 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  needsPassword: boolean;        // new user — must set a password before continuing
-  recoveryToken: string | null;  // password reset link was clicked — show reset form
   login: (email: string, password: string) => Promise<void>;
-  setPassword: (password: string) => Promise<void>;
-  resetPassword: (supabaseAccessToken: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,40 +28,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [needsPassword, setNeedsPassword] = useState(false);
-  const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
   const logoutRef = useRef<() => Promise<void>>();
 
-  // On mount: restore session AND check for Supabase recovery hash
+  // Restore session on mount
   useEffect(() => {
-    // Check URL hash for password reset / magic link callback
-    // Supabase appends #access_token=...&type=recovery to the redirect URL
-    try {
-      const hash = window.location.hash;
-      if (hash) {
-        const params = new URLSearchParams(hash.replace(/^#/, ''));
-        const accessToken = params.get('access_token');
-        const type = params.get('type');
-        if (accessToken && type === 'recovery') {
-          // Clear hash from URL immediately so token isn't visible
-          window.history.replaceState(null, '', window.location.pathname);
-          setRecoveryToken(accessToken);
-          setIsLoading(false);
-          return; // Don't restore old session — show reset form
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Normal session restore
     try {
       const storedToken = localStorage.getItem(TOKEN_KEY);
       const storedUser = localStorage.getItem(USER_KEY);
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const parts = storedToken.split('.');
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+        }
       }
     } catch (err) {
       console.error('Failed to restore auth session:', err);
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
     } finally {
       setIsLoading(false);
     }
@@ -93,62 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setToken(data.token);
     setUser(data.user);
-    setNeedsPassword(data.needsPassword === true);
     try {
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     } catch { /* ignore */ }
   }, []);
 
-  // Used by SetPasswordPage when a new user sets their password for the first time
-  const setPassword = useCallback(async (password: string) => {
-    const storedToken = localStorage.getItem(TOKEN_KEY) || token || '';
-    const res = await fetch('/api/auth/set-password', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${storedToken}`,
-      },
-      body: JSON.stringify({ password }),
-    });
-    let data: any = {};
-    try { data = await res.json(); } catch {}
-    if (!res.ok) {
-      throw new Error(
-        typeof data?.error === 'string' && data.error.trim()
-          ? data.error
-          : 'Failed to set password. Please try again.'
-      );
-    }
-    setNeedsPassword(false);
-  }, [token]);
-
-  // Used by ResetPasswordPage — user arrived via forgot-password email link
-  const resetPassword = useCallback(async (supabaseAccessToken: string, newPassword: string) => {
-    const res = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: supabaseAccessToken, password: newPassword }),
-    });
-    let data: any = {};
-    try { data = await res.json(); } catch {}
-    if (!res.ok) {
-      throw new Error(
-        typeof data?.error === 'string' && data.error.trim()
-          ? data.error
-          : 'Failed to reset password. Please try again.'
-      );
-    }
-    // Clear recovery token — redirect to login
-    setRecoveryToken(null);
-  }, []);
-
   const logout = useCallback(async () => {
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     setToken(null);
     setUser(null);
-    setNeedsPassword(false);
-    setRecoveryToken(null);
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -179,11 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, token,
       isAuthenticated: !!token,
       isLoading,
-      needsPassword,
-      recoveryToken,
       login,
-      setPassword,
-      resetPassword,
       logout,
     }}>
       {children}

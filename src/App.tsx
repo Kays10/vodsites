@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Site } from './types';
 import { useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
-import SetPasswordPage from './auth/SetPasswordPage';
 
 const API_BASE = '/api';
 const SAVE_PASSWORD = '2wsx@WSX123';
@@ -55,7 +54,7 @@ function PasswordPrompt({ onConfirm, onCancel }: { onConfirm: () => void; onCanc
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
-  const { isAuthenticated, isLoading: authLoading, token, user, logout, needsPassword } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, token, user, logout } = useAuth();
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,8 +258,6 @@ function App() {
   }
 
   if (!isAuthenticated) return <LoginPage />;
-
-  if (needsPassword) return <SetPasswordPage />;
 
   // ─── Render: main app ──────────────────────────────────────────────────────
   return (
